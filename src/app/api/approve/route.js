@@ -6,7 +6,7 @@ async function getOwnedConversation(conversationId, teacherUid) {
   const convRef = adminDb.collection('conversations').doc(conversationId);
   const convSnap = await convRef.get();
 
-  if (!convSnap.exists()) {
+  if (!convSnap.exists) {
     throw new RequestError('대화를 찾을 수 없습니다.', 404);
   }
 
@@ -18,7 +18,7 @@ async function getOwnedConversation(conversationId, teacherUid) {
   const assignmentRef = adminDb.collection('assignments').doc(conv.assignmentId);
   const assignmentSnap = await assignmentRef.get();
 
-  if (!assignmentSnap.exists()) {
+  if (!assignmentSnap.exists) {
     throw new RequestError('연결된 과제를 찾을 수 없습니다.', 404);
   }
 
@@ -65,7 +65,7 @@ export async function POST(request) {
     const teacherRef = adminDb.collection('teachers').doc(teacher.uid);
     const teacherSnap = await teacherRef.get();
 
-    if (!teacherSnap.exists()) {
+    if (!teacherSnap.exists) {
       return NextResponse.json(
         { success: false, error: '교사 설정을 찾을 수 없습니다.' },
         { status: 400 }

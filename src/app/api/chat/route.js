@@ -86,11 +86,11 @@ export async function POST(request) {
       conversationRef.get(),
     ]);
 
-    if (!assignmentSnap.exists()) {
+    if (!assignmentSnap.exists) {
       return NextResponse.json({ success: false, error: '과제를 찾을 수 없습니다.' }, { status: 404 });
     }
 
-    if (!conversationSnap.exists()) {
+    if (!conversationSnap.exists) {
       return NextResponse.json({ success: false, error: '대화 기록을 찾을 수 없습니다.' }, { status: 404 });
     }
 

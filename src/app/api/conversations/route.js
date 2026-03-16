@@ -15,7 +15,7 @@ export async function POST(request) {
     }
 
     const assignmentSnap = await adminDb.collection('assignments').doc(assignmentId).get();
-    if (!assignmentSnap.exists() || !assignmentSnap.data()?.isActive) {
+    if (!assignmentSnap.exists || !assignmentSnap.data()?.isActive) {
       return NextResponse.json(
         { success: false, error: '참여할 수 없는 과제입니다.' },
         { status: 404 }

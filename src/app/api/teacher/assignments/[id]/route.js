@@ -6,7 +6,7 @@ import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 async function getOwnedAssignment(id, teacherUid) {
   const snapshot = await adminDb.collection('assignments').doc(id).get();
 
-  if (!snapshot.exists()) {
+  if (!snapshot.exists) {
     throw new RequestError('과제를 찾을 수 없습니다.', 404);
   }
 

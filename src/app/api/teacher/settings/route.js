@@ -10,7 +10,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
-      settings: snapshot.exists() ? serializeData(snapshot.data()) : null,
+      settings: snapshot.exists ? serializeData(snapshot.data()) : null,
     });
   } catch (error) {
     if (error instanceof RequestError) {
@@ -38,7 +38,7 @@ export async function POST(request) {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    if (snapshot.exists()) {
+    if (snapshot.exists) {
       await ref.update(payload);
     } else {
       await ref.set({
