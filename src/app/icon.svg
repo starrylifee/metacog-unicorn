@@ -1,0 +1,56 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="36" y1="28" x2="220" y2="228" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A1128" />
+      <stop offset="0.45" stop-color="#2A1743" />
+      <stop offset="1" stop-color="#120B1E" />
+    </linearGradient>
+    <linearGradient id="horn" x1="126" y1="28" x2="156" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE68A" />
+      <stop offset="0.5" stop-color="#FBBF24" />
+      <stop offset="1" stop-color="#FB923C" />
+    </linearGradient>
+    <linearGradient id="manePink" x1="72" y1="78" x2="152" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F472B6" />
+      <stop offset="1" stop-color="#EC4899" />
+    </linearGradient>
+    <linearGradient id="manePurple" x1="94" y1="66" x2="188" y2="172" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C084FC" />
+      <stop offset="1" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="maneCyan" x1="126" y1="110" x2="212" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9" />
+      <stop offset="1" stop-color="#22D3EE" />
+    </linearGradient>
+  </defs>
+
+  <rect x="16" y="16" width="224" height="224" rx="56" fill="url(#bg)" />
+  <circle cx="74" cy="66" r="28" fill="#A855F7" fill-opacity="0.16" />
+  <circle cx="198" cy="194" r="34" fill="#22D3EE" fill-opacity="0.14" />
+  <circle cx="196" cy="62" r="26" fill="#EC4899" fill-opacity="0.14" />
+
+  <path d="M136 26L156 84L122 84L136 26Z" fill="url(#horn)" />
+  <path d="M141 41L149 64" stroke="#FFF7C2" stroke-width="5" stroke-linecap="round" />
+  <path d="M135 54L145 54" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" />
+  <path d="M131 68L147 68" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" />
+
+  <path d="M94 83L79 118L112 106L94 83Z" fill="#FFF7FF" />
+  <path d="M168 86L154 118L186 107L168 86Z" fill="#FFF7FF" />
+
+  <circle cx="95" cy="124" r="34" fill="url(#manePink)" />
+  <circle cx="128" cy="112" r="40" fill="url(#manePurple)" />
+  <circle cx="159" cy="132" r="34" fill="url(#maneCyan)" />
+  <circle cx="100" cy="164" r="28" fill="#A855F7" fill-opacity="0.9" />
+
+  <path d="M78 150C78 111 105 88 136 88C168 88 192 112 192 146C192 169 176 188 153 193L121 200C97 204 78 186 78 163V150Z" fill="#FFF7FF" />
+  <path d="M117 94C103 106 96 123 96 143C96 171 110 191 133 201L121 200C97 204 78 186 78 163V150C78 117 97 93 117 94Z" fill="#F5E7FF" />
+  <path d="M167 102C179 113 186 128 186 143C186 162 175 179 157 188" stroke="#F4D9FF" stroke-width="8" stroke-linecap="round" />
+
+  <path d="M149 114C163 118 174 130 174 145C174 161 161 174 145 174H134C125 174 118 167 118 158C118 145 129 134 142 134H150C154 134 158 138 158 142C158 146 154 150 150 150H139" stroke="#241535" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="132" cy="138" r="7" fill="#241535" />
+  <circle cx="130" cy="136" r="2" fill="#FFF7FF" />
+  <path d="M120 160C127 166 137 167 145 162" stroke="#EC4899" stroke-width="6" stroke-linecap="round" />
+  <circle cx="160" cy="158" r="4" fill="#EC4899" fill-opacity="0.7" />
+
+  <path d="M204 72L208 83L219 87L208 91L204 102L200 91L189 87L200 83L204 72Z" fill="#FFF7FF" />
+</svg>
