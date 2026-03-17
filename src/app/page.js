@@ -17,6 +17,13 @@ export default function HomePage() {
       setError('입장 코드와 출석번호를 모두 입력해주세요.');
       return;
     }
+
+    const normalizedStudentNumber = Number(studentNumber);
+    if (!Number.isInteger(normalizedStudentNumber) || normalizedStudentNumber < 1 || normalizedStudentNumber > 99) {
+      setError('출석번호는 1부터 99 사이로 입력해주세요.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -30,7 +37,7 @@ export default function HomePage() {
         return;
       }
 
-      router.push(`/chat/${entryCode.toUpperCase()}?student=${studentNumber}`);
+      router.push(`/chat/${entryCode.toUpperCase()}?student=${normalizedStudentNumber}`);
     } catch (err) {
       setError('서버 연결에 실패했어요. 다시 시도해주세요.');
       setLoading(false);
@@ -79,7 +86,7 @@ export default function HomePage() {
                   value={studentNumber}
                   onChange={(e) => setStudentNumber(e.target.value)}
                   min={1}
-                  max={50}
+                  max={99}
                   autoComplete="off"
                 />
               </div>

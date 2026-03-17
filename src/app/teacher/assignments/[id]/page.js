@@ -5,7 +5,12 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { getAssignmentById, getConversationsByAssignment, toggleAssignment } from '@/lib/firestore';
+import {
+  deleteAssignment,
+  getAssignmentById,
+  getConversationsByAssignment,
+  toggleAssignment,
+} from '@/lib/firestore';
 
 export default function AssignmentDetail() {
   const router = useRouter();
@@ -61,6 +66,23 @@ export default function AssignmentDetail() {
     const newState = !assignment.isActive;
     await toggleAssignment(id, newState);
     setAssignment(prev => ({ ...prev, isActive: newState }));
+  };
+
+  const handleDeleteAssignment = async () => {
+    if (!assignment) return;
+    if (!confirm(`"${assignment.title}" 과제를 삭제할까요?\n삭제한 과제는 되돌릴 수 없습니다.`)) {
+      return;
+    }
+
+    setActionLoading('delete-assignment');
+    try {
+      await deleteAssignment(id);
+      router.push('/teacher');
+    } catch (err) {
+      console.error('Delete assignment error:', err);
+      alert('과제 삭제에 실패했습니다.');
+      setActionLoading(null);
+    }
   };
 
   // 승인: Grownd 포인트 부여
@@ -235,6 +257,13 @@ export default function AssignmentDetail() {
               onClick={handleToggle}
             >
               {assignment.isActive ? '🔒 비활성화' : '🔓 활성화'}
+            </button>
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={handleDeleteAssignment}
+              disabled={actionLoading === 'delete-assignment'}
+            >
+              {actionLoading === 'delete-assignment' ? '삭제 중...' : '과제 삭제'}
             </button>
           </div>
         </div>

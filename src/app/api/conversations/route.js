@@ -7,7 +7,12 @@ export async function POST(request) {
     const { assignmentId, studentCode } = await request.json();
     const normalizedStudentCode = Number(studentCode);
 
-    if (!assignmentId || !Number.isInteger(normalizedStudentCode) || normalizedStudentCode <= 0) {
+    if (
+      !assignmentId ||
+      !Number.isInteger(normalizedStudentCode) ||
+      normalizedStudentCode <= 0 ||
+      normalizedStudentCode > 99
+    ) {
       return NextResponse.json(
         { success: false, error: '필수 정보가 누락되었거나 형식이 올바르지 않습니다.' },
         { status: 400 }

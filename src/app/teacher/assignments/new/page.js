@@ -48,7 +48,7 @@ export default function NewAssignment() {
   const [selectedSemester, setSelectedSemester] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedLesson, setSelectedLesson] = useState('');
-  const [titleEdited, setTitleEdited] = useState(false);
+  const [autoFilledTitle, setAutoFilledTitle] = useState('');
 
   const [form, setForm] = useState({
     title: '',
@@ -104,41 +104,44 @@ export default function NewAssignment() {
     setSelectedSemester('');
     setSelectedUnit('');
     setSelectedLesson('');
-
-    if (!titleEdited) {
-      setForm((prev) => ({ ...prev, title: '' }));
-    }
+    setAutoFilledTitle('');
+    setForm((prev) => ({
+      ...prev,
+      title: prev.title === autoFilledTitle ? '' : prev.title,
+    }));
   };
 
   const handleSemesterChange = (semester) => {
     setSelectedSemester(semester);
     setSelectedUnit('');
     setSelectedLesson('');
-
-    if (!titleEdited) {
-      setForm((prev) => ({ ...prev, title: '' }));
-    }
+    setAutoFilledTitle('');
+    setForm((prev) => ({
+      ...prev,
+      title: prev.title === autoFilledTitle ? '' : prev.title,
+    }));
   };
 
   const handleUnitChange = (unitTitle) => {
     setSelectedUnit(unitTitle);
     setSelectedLesson('');
-
-    if (!titleEdited) {
-      setForm((prev) => ({ ...prev, title: '' }));
-    }
+    setAutoFilledTitle('');
+    setForm((prev) => ({
+      ...prev,
+      title: prev.title === autoFilledTitle ? '' : prev.title,
+    }));
   };
 
   const handleLessonChange = (lessonTitle) => {
     setSelectedLesson(lessonTitle);
-
-    if (!titleEdited) {
-      setForm((prev) => ({ ...prev, title: lessonTitle }));
-    }
+    setForm((prev) => ({
+      ...prev,
+      title: !prev.title.trim() || prev.title === autoFilledTitle ? lessonTitle : prev.title,
+    }));
+    setAutoFilledTitle(lessonTitle);
   };
 
   const handleTitleChange = (event) => {
-    setTitleEdited(true);
     setForm((prev) => ({ ...prev, title: event.target.value }));
   };
 

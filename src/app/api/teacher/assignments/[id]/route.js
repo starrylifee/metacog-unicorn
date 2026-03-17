@@ -68,7 +68,19 @@ export async function DELETE(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
     const { ref } = await getOwnedAssignment(params.id, teacher.uid);
-    await ref.delete();
+    const conversationsSnapshot = await adminDb
+      .collection('conversations')
+      .where('assignmentId', '==', params.id)
+      .get();
+
+    const batch = adminDb.batch();
+    batch.delete(ref);
+
+    conversationsSnapshot.docs.forEach((conversationDoc) => {
+      batch.delete(conversationDoc.ref);
+    });
+
+    await batch.commit();
 
     return NextResponse.json({ success: true });
   } catch (error) {
