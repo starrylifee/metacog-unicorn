@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+
 import { CHAT_SESSION_COOKIE, hashChatSessionToken } from '@/lib/chatSession';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
@@ -7,7 +8,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-function buildSystemPrompt(assignment) {
+const MODEL_NAME = 'gpt-4o-mini';
+const MAX_STUDENT_TURNS = 3;
+
+function buildSystemPrompt(assignment, options = {}) {
+  const { shouldForceFinish = false } = options;
   const keywords = (assignment.keywords || []).join(', ');
 
   return `너는 "유니콘"이라는 이름의 귀엽지만 까다로운 캐릭터야. 🦄
@@ -53,10 +58,89 @@ ${keywords ? `=== 핵심 키워드 ===\n${keywords}` : ''}
 - 1점: 핵심 내용을 거의 설명하지 못했거나 크게 잘못된 설명이 있음
 
 === 중요 ===
-- 대화가 대략 5~10턴 안에 마무리될 수 있도록 적절히 조절해
+- 학생의 답변 기회는 최대 ${MAX_STUDENT_TURNS}번이야
+- 첫 안내 이후에는 필요한 것만 압축적으로 확인하고, 추가 질문은 2번 안팎으로 끝내
+- 늦어도 ${MAX_STUDENT_TURNS}번째 학생 답변에서는 반드시 이번 응답으로 대화를 마무리해
 - 학생이 "모르겠어", "그만할래" 등을 말하면, 격려 후 현재까지의 성과로 채점해
 - 오늘 수업 범위에 없는 내용을 지어내거나 끌어오지 마
+- ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 짧게 마무리한 뒤 반드시 [SCORE:X]와 [FEEDBACK:...]를 포함해.' : '학생이 충분히 설명했거나 답변 횟수가 거의 다 찼다면 더 캐묻지 말고 바로 마무리해.'}
 - 반드시 한국어로 대화해`;
+}
+
+function extractCompletionData(content) {
+  const replyText = typeof content === 'string' ? content.trim() : '';
+  const scoreMatch = replyText.match(/\[SCORE:(\d)\]/);
+  const feedbackMatch = replyText.match(/\[FEEDBACK:(.*?)\]/s);
+
+  if (!scoreMatch) {
+    return {
+      finished: false,
+      score: null,
+      feedback: null,
+      reply: replyText,
+    };
+  }
+
+  let score = parseInt(scoreMatch[1], 10);
+  if (score < 1) score = 1;
+  if (score > 3) score = 3;
+
+  return {
+    finished: true,
+    score,
+    feedback: feedbackMatch ? feedbackMatch[1].trim() : '',
+    reply: replyText
+      .replace(/\[SCORE:\d\]/, '')
+      .replace(/\[FEEDBACK:.*?\]/s, '')
+      .trim(),
+  };
+}
+
+async function createChatReply(messages, options = {}) {
+  const completion = await openai.chat.completions.create({
+    model: MODEL_NAME,
+    messages,
+    temperature: options.temperature ?? 0.8,
+    max_tokens: options.maxTokens ?? 500,
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || '';
+}
+
+async function createForcedFinalReply(assignment, conversationMessages) {
+  const attempts = [
+    {
+      temperature: 0.3,
+      maxTokens: 320,
+      systemPrompt: buildSystemPrompt(assignment, { shouldForceFinish: true }),
+    },
+    {
+      temperature: 0,
+      maxTokens: 260,
+      systemPrompt: `${buildSystemPrompt(assignment, { shouldForceFinish: true })}
+
+=== 출력 형식 ===
+- 이번 응답은 반드시 마지막 응답이야
+- 추가 질문은 절대 하지 마
+- 2~4문장으로 짧게 마무리한 뒤 마지막 두 줄에 아래 형식을 정확히 넣어
+[SCORE:X]
+[FEEDBACK:한 문장 피드백]`,
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const reply = await createChatReply(
+      [{ role: 'system', content: attempt.systemPrompt }, ...conversationMessages],
+      { temperature: attempt.temperature, maxTokens: attempt.maxTokens }
+    );
+    const parsed = extractCompletionData(reply);
+
+    if (parsed.finished) {
+      return parsed;
+    }
+  }
+
+  return null;
 }
 
 export async function POST(request) {
@@ -119,52 +203,46 @@ export async function POST(request) {
     }
 
     const existingMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
+    const studentTurnCount =
+      existingMessages.filter((message) => message.role === 'student').length + 1;
+    const shouldForceFinish = studentTurnCount >= MAX_STUDENT_TURNS;
 
-    // OpenAI 메시지 구성
-    const systemPrompt = buildSystemPrompt(assignment);
-    const openaiMessages = [
-      { role: 'system', content: systemPrompt },
-      ...existingMessages.map(m => ({
-        role: m.role === 'unicorn' ? 'assistant' : 'user',
-        content: m.content,
+    const conversationMessages = [
+      ...existingMessages.map((message) => ({
+        role: message.role === 'unicorn' ? 'assistant' : 'user',
+        content: message.content,
       })),
       { role: 'user', content: userMessage },
     ];
 
-    // OpenAI API 호출
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: openaiMessages,
-      temperature: 0.8,
-      max_tokens: 500,
-    });
+    let parsedReply = extractCompletionData(
+      await createChatReply(
+        [
+          { role: 'system', content: buildSystemPrompt(assignment, { shouldForceFinish }) },
+          ...conversationMessages,
+        ],
+        { temperature: shouldForceFinish ? 0.4 : 0.8, maxTokens: 500 }
+      )
+    );
 
-    let reply = completion.choices[0].message.content;
-
-    // 점수 파싱
-    let finished = false;
-    let score = null;
-    let feedback = null;
-
-    const scoreMatch = reply.match(/\[SCORE:(\d)\]/);
-    const feedbackMatch = reply.match(/\[FEEDBACK:(.*?)\]/s);
-
-    if (scoreMatch) {
-      finished = true;
-      score = parseInt(scoreMatch[1]);
-      if (score < 1) score = 1;
-      if (score > 3) score = 3;
-
-      feedback = feedbackMatch ? feedbackMatch[1].trim() : '';
-
-      // 태그 제거해서 학생에게 깔끔하게 보여주기
-      reply = reply
-        .replace(/\[SCORE:\d\]/, '')
-        .replace(/\[FEEDBACK:.*?\]/s, '')
-        .trim();
+    if (shouldForceFinish && !parsedReply.finished) {
+      const forcedFinalReply = await createForcedFinalReply(assignment, conversationMessages);
+      if (forcedFinalReply) {
+        parsedReply = forcedFinalReply;
+      }
     }
 
-    // 대화 기록 저장
+    if (shouldForceFinish && !parsedReply.finished) {
+      parsedReply = {
+        finished: true,
+        score: 2,
+        feedback: '핵심은 설명했지만 더 또렷하고 구체적으로 말하면 더 좋은 점수를 받을 수 있어요.',
+        reply: parsedReply.reply || '여기까지 설명한 내용으로 이번 대화는 마무리할게! 수고했어 🦄',
+      };
+    }
+
+    const { reply, finished, score, feedback } = parsedReply;
+
     const updatedMessages = [
       ...existingMessages,
       { role: 'student', content: userMessage, timestamp: new Date().toISOString() },
@@ -203,8 +281,8 @@ export async function POST(request) {
     }
 
     return response;
-  } catch (err) {
-    console.error('Chat API error:', err);
+  } catch (error) {
+    console.error('Chat API error:', error);
     return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
   }
 }

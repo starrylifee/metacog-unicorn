@@ -15,14 +15,26 @@ async function assertOwnedAssignment(id, teacherUid) {
   }
 }
 
+async function getAssignmentId(paramsPromise) {
+  const params = await paramsPromise;
+  const id = params?.id;
+
+  if (!id) {
+    throw new RequestError('과제 ID가 필요합니다.', 400);
+  }
+
+  return id;
+}
+
 export async function GET(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
-    await assertOwnedAssignment(params.id, teacher.uid);
+    const assignmentId = await getAssignmentId(params);
+    await assertOwnedAssignment(assignmentId, teacher.uid);
 
     const snapshot = await adminDb
       .collection('conversations')
-      .where('assignmentId', '==', params.id)
+      .where('assignmentId', '==', assignmentId)
       .orderBy('startedAt', 'desc')
       .get();
 

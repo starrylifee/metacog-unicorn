@@ -18,10 +18,22 @@ async function getOwnedAssignment(id, teacherUid) {
   return { ref: snapshot.ref, snapshot };
 }
 
+async function getAssignmentId(paramsPromise) {
+  const params = await paramsPromise;
+  const id = params?.id;
+
+  if (!id) {
+    throw new RequestError('과제 ID가 필요합니다.', 400);
+  }
+
+  return id;
+}
+
 export async function GET(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
-    const { ref } = await getOwnedAssignment(params.id, teacher.uid);
+    const assignmentId = await getAssignmentId(params);
+    const { ref } = await getOwnedAssignment(assignmentId, teacher.uid);
     const snapshot = await ref.get();
 
     return NextResponse.json({
@@ -41,7 +53,8 @@ export async function GET(request, { params }) {
 export async function PATCH(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
-    const { ref } = await getOwnedAssignment(params.id, teacher.uid);
+    const assignmentId = await getAssignmentId(params);
+    const { ref } = await getOwnedAssignment(assignmentId, teacher.uid);
     const { isActive } = await request.json();
 
     if (typeof isActive !== 'boolean') {
@@ -67,10 +80,11 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
-    const { ref } = await getOwnedAssignment(params.id, teacher.uid);
+    const assignmentId = await getAssignmentId(params);
+    const { ref } = await getOwnedAssignment(assignmentId, teacher.uid);
     const conversationsSnapshot = await adminDb
       .collection('conversations')
-      .where('assignmentId', '==', params.id)
+      .where('assignmentId', '==', assignmentId)
       .get();
 
     const batch = adminDb.batch();
