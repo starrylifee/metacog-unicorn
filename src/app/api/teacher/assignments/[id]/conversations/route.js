@@ -26,6 +26,17 @@ async function getAssignmentId(paramsPromise) {
   return id;
 }
 
+function getConversationTimestamp(conversation) {
+  const value = conversation.startedAt || conversation.completedAt || null;
+
+  if (!value) {
+    return 0;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
 export async function GET(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
@@ -35,12 +46,15 @@ export async function GET(request, { params }) {
     const snapshot = await adminDb
       .collection('conversations')
       .where('assignmentId', '==', assignmentId)
-      .orderBy('startedAt', 'desc')
       .get();
+
+    const conversations = snapshot.docs
+      .map(serializeDoc)
+      .sort((left, right) => getConversationTimestamp(right) - getConversationTimestamp(left));
 
     return NextResponse.json({
       success: true,
-      conversations: snapshot.docs.map(serializeDoc),
+      conversations,
     });
   } catch (error) {
     if (error instanceof RequestError) {
