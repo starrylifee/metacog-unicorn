@@ -11,6 +11,8 @@ export default function SiteFooter() {
           <Link href="/privacy">개인정보 처리방침</Link>
           <span className="site-footer-divider">|</span>
           <Link href="/terms">이용약관</Link>
+          <span className="site-footer-divider">|</span>
+          <Link href="/consent-sample">가정통신문 예시</Link>
         </div>
       </div>
     </footer>
