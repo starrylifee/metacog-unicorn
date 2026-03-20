@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -12,6 +12,28 @@ import {
   getConversationsByAssignment,
   toggleAssignment,
 } from '@/lib/firestore';
+import {
+  formatScoreOptions,
+  getAssignmentMaxScore,
+  getAssignmentScoreOptions,
+  getNextHigherScore,
+} from '@/lib/scoreConfig';
+
+function canApproveConversation(conversation) {
+  return (
+    conversation.status === 'completed' &&
+    !conversation.approved &&
+    conversation.approvalStatus !== 'processing'
+  );
+}
+
+function canResetConversation(conversation) {
+  return !conversation.approved && conversation.approvalStatus !== 'processing';
+}
+
+function formatConversationScore(score) {
+  return Number.isFinite(score) ? `${score}점` : '-';
+}
 
 export default function AssignmentDetail() {
   const router = useRouter();
@@ -25,6 +47,16 @@ export default function AssignmentDetail() {
   const [loadError, setLoadError] = useState('');
   const [selectedConv, setSelectedConv] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+
+  const scoreOptions = useMemo(
+    () => (assignment ? getAssignmentScoreOptions(assignment) : []),
+    [assignment]
+  );
+  const scoreScaleLabel = useMemo(
+    () => (scoreOptions.length > 0 ? formatScoreOptions(scoreOptions, ' / ') : ''),
+    [scoreOptions]
+  );
+  const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -52,7 +84,7 @@ export default function AssignmentDetail() {
         setAssignment(null);
         setConversations([]);
         setSelectedConv(null);
-        setLoadError('이 과제를 확인할 수 없습니다.');
+        setLoadError('과제를 확인할 수 없습니다.');
         setLoading(false);
         router.push('/teacher');
         return;
@@ -74,8 +106,10 @@ export default function AssignmentDetail() {
       setConversations(nextConversations);
 
       if (selectedConv) {
-        const nextSelectedConv = nextConversations.find((conversation) => conversation.id === selectedConv.id);
-        setSelectedConv(nextSelectedConv || null);
+        const refreshedSelection = nextConversations.find(
+          (conversation) => conversation.id === selectedConv.id
+        );
+        setSelectedConv(refreshedSelection || null);
       }
     } catch (error) {
       console.error('Conversation load error:', error);
@@ -83,8 +117,8 @@ export default function AssignmentDetail() {
       setSelectedConv(null);
       setLoadError(
         error instanceof Error
-          ? `과제는 불러왔지만 대화 목록을 가져오지 못했습니다. ${error.message}`
-          : '과제는 불러왔지만 대화 목록을 가져오지 못했습니다.'
+          ? `과제는 불러왔지만 대화 목록은 가져오지 못했습니다. ${error.message}`
+          : '과제는 불러왔지만 대화 목록은 가져오지 못했습니다.'
       );
     }
 
@@ -119,23 +153,29 @@ export default function AssignmentDetail() {
 
   const handleDeleteAssignment = async () => {
     if (!assignment) return;
-    if (!confirm(`"${assignment.title}" 과제를 삭제할까요?\n삭제한 과제는 되돌릴 수 없습니다.`)) {
+
+    if (!confirm(`"${assignment.title}" 과제를 삭제할까요?\n삭제 후에는 되돌릴 수 없습니다.`)) {
       return;
     }
 
     setActionLoading('delete-assignment');
+
     try {
       await deleteAssignment(id);
       router.push('/teacher');
     } catch (error) {
       console.error('Delete assignment error:', error);
-      alert('과제 삭제에 실패했습니다.');
+      alert('과제를 삭제하지 못했습니다.');
       setActionLoading(null);
     }
   };
 
   const handleApprove = async (conversation) => {
-    if (!confirm(`${conversation.studentCode}번 학생 (${conversation.score}점) 승인하고 포인트를 부여할까요?`)) {
+    if (!canApproveConversation(conversation)) {
+      return;
+    }
+
+    if (!confirm(`${conversation.studentCode}번 학생 제출을 승인할까요?`)) {
       return;
     }
 
@@ -150,39 +190,38 @@ export default function AssignmentDetail() {
       });
       const data = await response.json();
 
-      if (data.success) {
-        alert('✅ 승인 완료! 포인트가 부여되었습니다.');
-        await loadData();
-      } else {
-        alert(`❌ ${data.error}`);
+      if (!data.success) {
+        alert(data.error || '승인 처리에 실패했습니다.');
       }
+
+      await loadData();
     } catch (error) {
       console.error('Approve error:', error);
-      alert('오류가 발생했습니다.');
+      alert('승인 처리 중 오류가 발생했습니다.');
+      await loadData();
     }
 
     setActionLoading(null);
   };
 
   const handleApproveAll = async () => {
-    const pendingConversations = conversations.filter(
-      (conversation) => conversation.status === 'completed' && !conversation.approved
-    );
+    const pendingConversations = conversations.filter(canApproveConversation);
 
     if (pendingConversations.length === 0) {
       alert('승인 대기 중인 학생이 없습니다.');
       return;
     }
 
-    if (!confirm(`${pendingConversations.length}명의 학생을 모두 승인할까요?`)) {
+    if (!confirm(`${pendingConversations.length}명의 제출을 모두 승인할까요?`)) {
       return;
     }
 
     setActionLoading('all');
-    const headers = await getAuthHeaders();
 
-    for (const conversation of pendingConversations) {
-      try {
+    try {
+      const headers = await getAuthHeaders();
+
+      for (const conversation of pendingConversations) {
         const response = await fetch('/api/approve', {
           method: 'POST',
           headers,
@@ -191,23 +230,27 @@ export default function AssignmentDetail() {
         const data = await response.json();
 
         if (!response.ok || !data.success) {
-          throw new Error(data.error || `${conversation.studentCode}번 승인 실패`);
+          throw new Error(data.error || `${conversation.studentCode}번 승인에 실패했습니다.`);
         }
-      } catch (error) {
-        console.error(`Approve error for ${conversation.studentCode}:`, error);
-        alert(`❌ ${conversation.studentCode}번 학생 승인에 실패했습니다.`);
-        setActionLoading(null);
-        return;
       }
+
+      await loadData();
+    } catch (error) {
+      console.error('Approve all error:', error);
+      alert(error instanceof Error ? error.message : '일괄 승인 중 오류가 발생했습니다.');
+      await loadData();
     }
 
-    alert('✅ 전체 승인 완료!');
-    await loadData();
     setActionLoading(null);
   };
 
   const handleReset = async (conversation) => {
-    if (!confirm(`${conversation.studentCode}번 학생의 기록을 삭제하고 다시 참여할 수 있게 할까요?`)) {
+    if (!canResetConversation(conversation)) {
+      alert('승인 중이거나 이미 승인된 제출은 리셋할 수 없습니다.');
+      return;
+    }
+
+    if (!confirm(`${conversation.studentCode}번 학생 기록을 삭제하고 다시 참여하게 할까요?`)) {
       return;
     }
 
@@ -223,25 +266,25 @@ export default function AssignmentDetail() {
       });
       const data = await response.json();
 
-      if (data.success) {
-        alert('🔄 리셋 완료! 학생이 다시 참여할 수 있습니다.');
-        setSelectedConv(null);
-        await loadData();
-      } else {
-        alert(`❌ ${data.error}`);
+      if (!data.success) {
+        alert(data.error || '리셋에 실패했습니다.');
       }
+
+      setSelectedConv(null);
+      await loadData();
     } catch (error) {
       console.error('Reset error:', error);
-      alert('오류가 발생했습니다.');
+      alert('리셋 중 오류가 발생했습니다.');
+      await loadData();
     }
 
     setActionLoading(null);
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '-';
+  const formatDate = (value) => {
+    if (!value) return '-';
 
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const date = value.toDate ? value.toDate() : new Date(value);
     return date.toLocaleDateString('ko-KR', {
       month: 'short',
       day: 'numeric',
@@ -250,16 +293,17 @@ export default function AssignmentDetail() {
     });
   };
 
-  const getScoreEmoji = (score) => {
-    if (score === 3) return '🌟🌟🌟';
-    if (score === 2) return '⭐⭐☆';
-    if (score === 1) return '⭐☆☆';
-    return '-';
-  };
-
   const getStatusLabel = (conversation) => {
     if (conversation.approved) {
-      return { text: '승인됨', className: 'badge-active' };
+      return { text: '승인 완료', className: 'badge-active' };
+    }
+
+    if (conversation.approvalStatus === 'processing') {
+      return { text: '승인 처리 중', className: 'badge-inactive' };
+    }
+
+    if (conversation.approvalStatus === 'failed') {
+      return { text: '승인 실패', className: 'badge-inactive' };
     }
 
     if (conversation.status === 'completed') {
@@ -270,7 +314,7 @@ export default function AssignmentDetail() {
   };
 
   const avgScore = () => {
-    const scoredConversations = conversations.filter((conversation) => conversation.score);
+    const scoredConversations = conversations.filter((conversation) => Number.isFinite(conversation.score));
 
     if (scoredConversations.length === 0) {
       return '-';
@@ -283,9 +327,14 @@ export default function AssignmentDetail() {
     return average.toFixed(1);
   };
 
-  const pendingCount = conversations.filter(
-    (conversation) => conversation.status === 'completed' && !conversation.approved
-  ).length;
+  const pendingCount = conversations.filter(canApproveConversation).length;
+  const selectedNextHigherScore = useMemo(() => {
+    if (!selectedConv || !Number.isFinite(selectedConv.score)) {
+      return null;
+    }
+
+    return getNextHigherScore(scoreOptions, selectedConv.score);
+  }, [scoreOptions, selectedConv]);
 
   if (loading) {
     return (
@@ -305,14 +354,14 @@ export default function AssignmentDetail() {
             <span className="emoji">🦄</span> 메타인지 유니콘
           </Link>
           <Link href="/teacher" className="btn btn-ghost btn-sm">
-            ← 대시보드
+            대시보드
           </Link>
         </nav>
 
         <div className="content-wrapper content-narrow">
           <div className="empty-state">
             <div className="empty-state-emoji">⚠️</div>
-            <p className="empty-state-text">{loadError || '과제 정보를 불러오지 못했어요.'}</p>
+            <p className="empty-state-text">{loadError || '과제 정보를 불러오지 못했습니다.'}</p>
             <div
               style={{
                 display: 'flex',
@@ -341,7 +390,7 @@ export default function AssignmentDetail() {
           <span className="emoji">🦄</span> 메타인지 유니콘
         </Link>
         <Link href="/teacher" className="btn btn-ghost btn-sm">
-          ← 대시보드
+          대시보드
         </Link>
       </nav>
 
@@ -389,13 +438,15 @@ export default function AssignmentDetail() {
               </span>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              {assignment.subject && `${assignment.subject} · `}
-              {assignment.grade && `${assignment.grade} · `}
-              입장코드:{' '}
-              <strong style={{ color: 'var(--cyan-primary)', letterSpacing: '0.1em' }}>
-                {assignment.entryCode}
-              </strong>
+              {assignment.subject ? `${assignment.subject} · ` : ''}
+              {assignment.grade ? `${assignment.grade} · ` : ''}
+              입장코드: <strong style={{ color: 'var(--cyan-primary)', letterSpacing: '0.1em' }}>{assignment.entryCode}</strong>
             </p>
+            {scoreScaleLabel && (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+                점수 단계: {scoreScaleLabel}
+              </p>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -405,14 +456,14 @@ export default function AssignmentDetail() {
                 onClick={handleApproveAll}
                 disabled={actionLoading === 'all'}
               >
-                {actionLoading === 'all' ? '처리 중...' : `✅ 전체 승인 (${pendingCount}명)`}
+                {actionLoading === 'all' ? '처리 중...' : `전체 승인 (${pendingCount})`}
               </button>
             )}
             <button
               className={`btn ${assignment.isActive ? 'btn-danger' : 'btn-secondary'} btn-sm`}
               onClick={handleToggle}
             >
-              {assignment.isActive ? '🔒 비활성화' : '🔓 활성화'}
+              {assignment.isActive ? '비활성화' : '활성화'}
             </button>
             <button
               className="btn btn-danger btn-sm"
@@ -452,19 +503,18 @@ export default function AssignmentDetail() {
           </div>
           <div className="stat-card">
             <div className="stat-value">{avgScore()}</div>
-            <div className="stat-label">평균 점수</div>
+            <div className="stat-label">평균 점수{Number.isFinite(maxScore) ? ` / ${maxScore}` : ''}</div>
           </div>
         </div>
 
-        <h2 className="heading-section">📊 학생 결과</h2>
+        <h2 className="heading-section">학생 결과</h2>
 
         {conversations.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-emoji">🦄</div>
-            <p className="empty-state-text">아직 참여한 학생이 없어요</p>
+            <p className="empty-state-text">아직 참여한 학생이 없습니다.</p>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              학생들에게 입장코드{' '}
-              <strong style={{ color: 'var(--cyan-primary)' }}>{assignment.entryCode}</strong>를 알려주세요!
+              학생에게 입장코드 <strong style={{ color: 'var(--cyan-primary)' }}>{assignment.entryCode}</strong>를 알려 주세요.
             </p>
           </div>
         ) : (
@@ -476,13 +526,14 @@ export default function AssignmentDetail() {
                     <th>번호</th>
                     <th>상태</th>
                     <th>점수</th>
-                    <th>시간</th>
+                    <th>시작 시간</th>
                     <th>관리</th>
                   </tr>
                 </thead>
                 <tbody>
                   {conversations.map((conversation) => {
                     const status = getStatusLabel(conversation);
+                    const isSelected = selectedConv?.id === conversation.id;
 
                     return (
                       <tr key={conversation.id}>
@@ -492,36 +543,34 @@ export default function AssignmentDetail() {
                         <td>
                           <span className={`badge ${status.className}`}>{status.text}</span>
                         </td>
-                        <td>{conversation.score ? getScoreEmoji(conversation.score) : '-'}</td>
+                        <td>{formatConversationScore(conversation.score)}</td>
                         <td className="card-meta">{formatDate(conversation.startedAt)}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                            {conversation.status === 'completed' && !conversation.approved && (
+                            {canApproveConversation(conversation) && (
                               <button
                                 className="btn btn-primary btn-sm"
                                 onClick={() => handleApprove(conversation)}
                                 disabled={actionLoading === conversation.id}
                               >
-                                {actionLoading === conversation.id ? '...' : '✅ 승인'}
+                                {actionLoading === conversation.id ? '...' : '승인'}
                               </button>
                             )}
                             <button
                               className="btn btn-ghost btn-sm"
-                              onClick={() =>
-                                setSelectedConv(
-                                  selectedConv?.id === conversation.id ? null : conversation
-                                )
-                              }
+                              onClick={() => setSelectedConv(isSelected ? null : conversation)}
                             >
-                              💬
+                              보기
                             </button>
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => handleReset(conversation)}
-                              disabled={actionLoading === conversation.id}
-                            >
-                              🔄
-                            </button>
+                            {canResetConversation(conversation) && (
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleReset(conversation)}
+                                disabled={actionLoading === conversation.id}
+                              >
+                                리셋
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -534,18 +583,19 @@ export default function AssignmentDetail() {
             {selectedConv && (
               <div className="card-glass" style={{ marginBottom: '2rem' }}>
                 <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>
-                  💬 {selectedConv.studentCode}번 학생 대화 기록
-                  {selectedConv.score && (
+                  {selectedConv.studentCode}번 학생 대화 기록
+                  {Number.isFinite(selectedConv.score) && (
                     <span className="badge badge-score" style={{ marginLeft: '0.75rem' }}>
                       {selectedConv.score}점
                     </span>
                   )}
                   {selectedConv.approved && (
                     <span className="badge badge-active" style={{ marginLeft: '0.5rem' }}>
-                      승인됨
+                      승인 완료
                     </span>
                   )}
                 </h3>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {(selectedConv.messages || []).map((message, index) => (
                     <div
@@ -553,14 +603,32 @@ export default function AssignmentDetail() {
                       className={`chat-bubble chat-bubble-${message.role}`}
                       style={{ maxWidth: '85%' }}
                     >
-                      {message.role === 'unicorn' && <div className="chat-sender">🦄 유니콘</div>}
+                      {message.role === 'unicorn' && <div className="chat-sender">메타인지 유니콘</div>}
                       <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
                     </div>
                   ))}
                 </div>
+
                 {selectedConv.feedback && (
                   <div className="score-feedback" style={{ marginTop: '1rem' }}>
-                    <strong>AI 피드백:</strong> {selectedConv.feedback}
+                    <strong>AI 피드백</strong> {selectedConv.feedback}
+                  </div>
+                )}
+
+                {selectedNextHigherScore !== null && selectedConv.higherScoreTip && (
+                  <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
+                    <strong>{selectedNextHigherScore}점을 받으려면</strong> {selectedConv.higherScoreTip}
+                  </div>
+                )}
+
+                {selectedConv.lastGrowndError?.message && !selectedConv.approved && (
+                  <div className="score-feedback" style={{ marginTop: '1rem' }}>
+                    <strong>승인 오류</strong> {selectedConv.lastGrowndError.message}
+                    {selectedConv.approvalStatus === 'processing' && (
+                      <div style={{ marginTop: '0.5rem' }}>
+                        중복 지급을 막기 위해 자동 재시도는 잠시 막혀 있습니다. 상태를 확인한 뒤 필요하면 관리자 확인 후 처리해 주세요.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

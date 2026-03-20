@@ -1,7 +1,22 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+
+import { formatScoreOptions, getAssignmentMaxScore, getNextHigherScore } from '@/lib/scoreConfig';
+
+function buildWelcomeMessage(title) {
+  return {
+    role: 'unicorn',
+    content: `안녕! 나는 메타인지 유니콘이야.\n\n오늘 **"${title}"**에서 배운 내용을 네 말로 설명해 줘.\n필요한 부분만 짧게 더 물어보고 마무리할게.`,
+  };
+}
+
+function buildInitialMessages(title, savedMessages = []) {
+  const welcomeMessage = buildWelcomeMessage(title);
+  return savedMessages.length > 0 ? [welcomeMessage, ...savedMessages] : [welcomeMessage];
+}
 
 export default function ChatPage() {
   const params = useParams();
@@ -18,19 +33,40 @@ export default function ChatPage() {
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState(null);
   const [feedback, setFeedback] = useState('');
+  const [higherScoreTip, setHigherScoreTip] = useState('');
   const [blocked, setBlocked] = useState(false);
+  const [blockedMessage, setBlockedMessage] = useState('');
   const messagesEndRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scoreScaleLabel = useMemo(
+    () => (assignment?.scoreOptions ? formatScoreOptions(assignment.scoreOptions, ' / ') : ''),
+    [assignment]
+  );
+  const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
+  const nextHigherScore = useMemo(() => {
+    if (!assignment || !Number.isFinite(score)) {
+      return null;
+    }
+
+    return getNextHigherScore(assignment.scoreOptions || [], score);
+  }, [assignment, score]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending]);
 
   useEffect(() => {
     async function init() {
+      setLoading(true);
+      setBlocked(false);
+      setBlockedMessage('');
+      setFinished(false);
+      setScore(null);
+      setFeedback('');
+      setHigherScoreTip('');
+      setMessages([]);
+      setConversationId(null);
+
       try {
         const response = await fetch(`/api/assignments/lookup?code=${code}`);
         const data = await response.json();
@@ -54,18 +90,28 @@ export default function ChatPage() {
 
         if (conversationData.alreadyExists) {
           setBlocked(true);
+          setBlockedMessage(
+            conversationData.error || '이미 참여한 번호입니다. 교사에게 문의해 주세요.'
+          );
           setLoading(false);
           return;
         }
 
         if (conversationData.success) {
+          const restoredConversation = conversationData.conversation;
+          const restoredMessages = Array.isArray(restoredConversation?.messages)
+            ? restoredConversation.messages
+            : [];
+
           setConversationId(conversationData.conversationId);
-          setMessages([
-            {
-              role: 'unicorn',
-              content: `안녕! 나는 유니콘이야 🦄✨\n\n오늘 **"${data.assignment.title}"**에서 배운 걸 핵심만 짧고 정확하게 설명해줘!\n내가 필요한 것만 2번 정도 더 물어보고 금방 끝낼게.\n\n잘 설명하면 포인트를 줄 수도 있어! 💎`,
-            },
-          ]);
+          setMessages(buildInitialMessages(data.assignment.title, restoredMessages));
+
+          if (restoredConversation?.status === 'completed') {
+            setFinished(true);
+            setScore(restoredConversation.score ?? null);
+            setFeedback(restoredConversation.feedback || '');
+            setHigherScoreTip(restoredConversation.higherScoreTip || '');
+          }
         }
       } catch (error) {
         console.error('Init error:', error);
@@ -78,7 +124,7 @@ export default function ChatPage() {
   }, [code, studentCode]);
 
   const sendMessage = async () => {
-    if (!input.trim() || sending || finished) {
+    if (!input.trim() || sending || finished || !conversationId || !assignment) {
       return;
     }
 
@@ -109,14 +155,15 @@ export default function ChatPage() {
         if (data.finished) {
           setFinished(true);
           setScore(data.score);
-          setFeedback(data.feedback);
+          setFeedback(data.feedback || '');
+          setHigherScoreTip(data.higherScoreTip || '');
         }
       } else {
         setMessages([
           ...nextMessages,
           {
             role: 'unicorn',
-            content: data.error || '앗, 잠깐 문제가 생겼어! 🫣 처음부터 다시 시작해줄래?',
+            content: data.error || '문제가 생겼어요. 처음부터 다시 시작해 주세요.',
           },
         ]);
       }
@@ -126,7 +173,7 @@ export default function ChatPage() {
         ...nextMessages,
         {
           role: 'unicorn',
-          content: '앗, 잠깐 문제가 생겼어! 🫣 다시 말해줄래?',
+          content: '연결에 문제가 있어요. 한 번만 다시 설명해 줄래?',
         },
       ]);
     }
@@ -139,12 +186,6 @@ export default function ChatPage() {
       event.preventDefault();
       void sendMessage();
     }
-  };
-
-  const getScoreStars = (value) => {
-    const filled = '⭐';
-    const empty = '☆';
-    return filled.repeat(value) + empty.repeat(3 - value);
   };
 
   if (loading) {
@@ -163,12 +204,12 @@ export default function ChatPage() {
     return (
       <div className="page-container">
         <div className="entry-container">
-          <div className="unicorn-avatar unicorn-avatar-large">😢</div>
-          <h2 style={{ marginTop: '1rem' }}>과제를 찾을 수 없어요</h2>
-          <p className="subtitle">입장 코드를 다시 확인해주세요!</p>
-          <a href="/" className="btn btn-primary">
+          <div className="unicorn-avatar unicorn-avatar-large">⚠️</div>
+          <h2 style={{ marginTop: '1rem' }}>과제를 찾을 수 없어요.</h2>
+          <p className="subtitle">입장 코드를 다시 확인해 주세요.</p>
+          <Link href="/" className="btn btn-primary">
             돌아가기
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -179,15 +220,11 @@ export default function ChatPage() {
       <div className="page-container">
         <div className="entry-container">
           <div className="unicorn-avatar unicorn-avatar-large">🔒</div>
-          <h2 style={{ marginTop: '1rem' }}>이미 참여한 번호예요!</h2>
-          <p className="subtitle">
-            {studentCode}번 학생은 이 과제에 이미 참여했어요.
-            <br />
-            본인 번호가 맞다면 선생님에게 문의하세요.
-          </p>
-          <a href="/" className="btn btn-primary">
+          <h2 style={{ marginTop: '1rem' }}>지금은 이 번호로 들어갈 수 없어요.</h2>
+          <p className="subtitle">{blockedMessage}</p>
+          <Link href="/" className="btn btn-primary">
             돌아가기
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -204,20 +241,20 @@ export default function ChatPage() {
               {assignment.title} · {studentCode}번 학생
             </p>
           </div>
-          {finished && <span className="badge badge-score">{score}점</span>}
+          {Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
         </div>
 
         <div className="chat-messages">
           {messages.map((message, index) => (
             <div key={index} className={`chat-bubble chat-bubble-${message.role}`}>
-              {message.role === 'unicorn' && <div className="chat-sender">🦄 유니콘</div>}
+              {message.role === 'unicorn' && <div className="chat-sender">메타인지 유니콘</div>}
               <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
             </div>
           ))}
 
           {sending && (
             <div className="chat-bubble chat-bubble-unicorn">
-              <div className="chat-sender">🦄 유니콘</div>
+              <div className="chat-sender">메타인지 유니콘</div>
               <div className="typing-dots">
                 <span />
                 <span />
@@ -226,16 +263,25 @@ export default function ChatPage() {
             </div>
           )}
 
-          {finished && score && (
+          {finished && Number.isFinite(score) && (
             <div className="chat-bubble chat-bubble-system">
               <div className="score-display">
-                <div className="score-stars">{getScoreStars(score)}</div>
-                <div className="score-label">{score}점 / 3점</div>
+                <div className="score-label">{score}점{Number.isFinite(maxScore) ? ` / ${maxScore}점` : ''}</div>
+                {scoreScaleLabel && (
+                  <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    점수 단계: {scoreScaleLabel}
+                  </p>
+                )}
                 {feedback && <div className="score-feedback">{feedback}</div>}
+                {nextHigherScore !== null && higherScoreTip && (
+                  <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
+                    <strong>{nextHigherScore}점을 받으려면</strong> {higherScoreTip}
+                  </div>
+                )}
                 <div style={{ marginTop: '1rem' }}>
-                  <a href="/" className="btn btn-primary btn-sm">
-                    🏠 처음으로
-                  </a>
+                  <Link href="/" className="btn btn-primary btn-sm">
+                    처음으로
+                  </Link>
                 </div>
               </div>
             </div>
@@ -250,7 +296,7 @@ export default function ChatPage() {
               id="chat-input"
               type="text"
               className="form-input"
-              placeholder="유니콘에게 설명해보세요..."
+              placeholder="유니콘에게 설명해 보세요..."
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
@@ -263,7 +309,7 @@ export default function ChatPage() {
               onClick={() => void sendMessage()}
               disabled={sending || !input.trim()}
             >
-              {sending ? '⏳' : '전송'}
+              {sending ? '...' : '전송'}
             </button>
           </div>
         )}

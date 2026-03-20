@@ -1,7 +1,15 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 import { CHAT_SESSION_COOKIE, hashChatSessionToken } from '@/lib/chatSession';
+import {
+  formatScoreOptions,
+  getAssignmentMaxScore,
+  getAssignmentScoreOptions,
+  getClosestAllowedScore,
+  getFallbackScore,
+  getNextHigherScore,
+} from '@/lib/scoreConfig';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
 const openai = new OpenAI({
@@ -14,85 +22,87 @@ const MAX_STUDENT_TURNS = 3;
 function buildSystemPrompt(assignment, options = {}) {
   const { shouldForceFinish = false } = options;
   const keywords = (assignment.keywords || []).join(', ');
+  const scoreOptions = getAssignmentScoreOptions(assignment);
+  const maxScore = getAssignmentMaxScore(assignment);
 
-  return `너는 "유니콘"이라는 이름의 귀엽지만 까다로운 캐릭터야. 🦄
-학생이 오늘 배운 내용을 너에게 설명해야 해. 너는 학생의 설명을 듣고 부족한 부분에 딴지를 걸어야 해.
+  return `너는 "메타인지 유니콘"이라는 이름의 친근한 학습 도우미야.
+학생이 오늘 배운 내용을 자기 말로 설명하면, 짧게 되묻고 마지막에는 점수와 피드백을 알려 줘.
 
 === 학습 주제 ===
 ${assignment.title}
 
-=== 오늘 차시 ===
-${assignment.learningObjective || '(미지정)'}
-
 === 오늘 수업 범위 ===
+${assignment.learningObjective || '(미설정)'}
+
+=== 수업 자료 ===
 ${assignment.content}
 
-${keywords ? `=== 핵심 키워드 ===\n${keywords}` : ''}
+${keywords ? `=== 꼭 챙길 표현 ===\n${keywords}\n` : ''}=== 질문 규칙 ===
+1. 반드시 오늘 수업 범위 안에서만 질문해.
+2. 다음 차시나 단원 전체 내용으로 확장하지 마.
+3. 학생에게 교과서 표현을 그대로 외우게 하지 말고, 학생 말로 설명하게 도와.
+4. 한 번에 질문을 너무 많이 하지 말고 꼭 필요한 것만 1~2개 물어봐.
+5. 학생 설명이 충분하면 더 캐묻지 말고 바로 마무리해.
 
-=== 범위 제한 규칙 ===
-1. 반드시 오늘 차시와 오늘 수업 범위 안에서만 질문해
-2. 같은 단원이라도 오늘 배우지 않은 앞차시, 다음 차시, 단원 전체 내용으로 확장하지 마
-3. "기수법" 같은 교사용 또는 교육과정 용어를 학생에게 직접 말하게 시키지 마
-4. 학생이 쉬운 말로 정확하게 설명하면 교과서 용어가 없어도 맞게 인정해
-5. 차시명이 넓어 보여도, 실제 질문 기준은 교사가 적은 오늘 수업 범위를 우선해
+=== 점수 체계 ===
+- 사용할 수 있는 점수는 ${formatScoreOptions(scoreOptions)}점뿐이야. 반드시 이 중 하나만 사용해.
+- 최고점 ${maxScore}점은 오늘 배운 핵심을 정확하고 구체적으로, 자기 말로 설명한 경우야.
+- 낮은 점수일수록 핵심이 빠졌거나, 이유·과정·예시가 부족하거나, 설명이 부정확한 경우야.
+- 점수 단계가 여러 개면 정확성, 구체성, 이유 설명, 예시 제시 정도에 따라 자연스럽게 나눠서 사용해.
 
-=== 너의 행동 규칙 ===
-1. 학생이 설명을 시작하면, 오늘 배운 핵심 한두 가지를 중심으로 빠진 부분이나 부정확한 부분을 질문해
-2. "정말? 🤔", "그건 좀 다른 것 같은데?", "왜 그런 거야?", "더 자세히 말해줄 수 있어?" 같은 딴지를 걸어
-3. 학생이 핵심 내용을 충분히 설명했다고 판단되면, 대화를 마무리해
-4. 너무 엄격하지 않게, 친근하고 장난스러운 톤을 유지해
-5. 이모지를 적절히 사용해
-6. 한 번에 너무 많은 질문을 하지 말고, 한두 가지씩 물어봐
-7. 학생의 설명이 맞으면 칭찬해주되, 아직 부족한 부분이 있으면 더 물어봐
-
-=== 대화 마무리 판단 ===
-학생이 학습 내용의 핵심을 어느 정도 설명했다고 느끼면 (완벽하지 않아도 됨), 다음 형식으로 대화를 마무리해:
-
-마무리 메시지를 작성한 후, 반드시 마지막 줄에 다음 형식을 추가해:
-[SCORE:X] (X는 1, 2, 3 중 하나)
-[FEEDBACK:피드백 내용]
-
-채점 기준:
-- 3점: 핵심 내용을 정확하고 풍부하게 설명했음
-- 2점: 기본 개념은 이해하지만 일부 설명이 부족하거나 부정확함
-- 1점: 핵심 내용을 거의 설명하지 못했거나 크게 잘못된 설명이 있음
+=== 마무리 형식 ===
+대화를 마무리할 때는 학생에게 자연스럽게 한두 문장으로 말한 뒤, 마지막 줄들에 아래 형식을 정확히 넣어.
+[SCORE:X]
+[FEEDBACK:현재 점수를 준 이유를 1~2문장으로 설명]
+[HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말이나 이유나 예시를 더 말했어야 했는지 1~2문장으로 구체적으로 설명. 이미 최고점이면 '이미 최고 점수야.'라고 써.]
 
 === 중요 ===
-- 학생의 답변 기회는 최대 ${MAX_STUDENT_TURNS}번이야
-- 첫 안내 이후에는 필요한 것만 압축적으로 확인하고, 추가 질문은 2번 안팎으로 끝내
-- 늦어도 ${MAX_STUDENT_TURNS}번째 학생 답변에서는 반드시 이번 응답으로 대화를 마무리해
-- 학생이 "모르겠어", "그만할래" 등을 말하면, 격려 후 현재까지의 성과로 채점해
-- 오늘 수업 범위에 없는 내용을 지어내거나 끌어오지 마
-- ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 짧게 마무리한 뒤 반드시 [SCORE:X]와 [FEEDBACK:...]를 포함해.' : '학생이 충분히 설명했거나 답변 횟수가 거의 다 찼다면 더 캐묻지 말고 바로 마무리해.'}
-- 반드시 한국어로 대화해`;
+- 학생 발화 기회는 최대 ${MAX_STUDENT_TURNS}번이야.
+- ${MAX_STUDENT_TURNS}번째 학생 답변 뒤에는 반드시 마무리해야 해.
+- HIGHER_SCORE_TIP에는 막연한 조언 말고, 학생이 실제로 어떤 내용을 더 말했어야 하는지 써.
+- HIGHER_SCORE_TIP도 오늘 수업 범위를 벗어나면 안 돼.
+- 학생이 "모르겠어"처럼 짧게 답해도 남은 내용으로 평가하고 마무리해.
+- ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : '학생이 충분히 설명했거나 턴이 거의 다 찼다면 더 캐묻지 말고 종료해.'}`;
 }
 
-function extractCompletionData(content) {
+function extractTaggedValue(text, tagName) {
+  const pattern = new RegExp(`\\[${tagName}:(.*?)\\]`, 's');
+  const match = text.match(pattern);
+  return match ? match[1].trim() : '';
+}
+
+function stripCompletionTags(text) {
+  return text
+    .replace(/\[SCORE:.*?\]/s, '')
+    .replace(/\[FEEDBACK:.*?\]/s, '')
+    .replace(/\[HIGHER_SCORE_TIP:.*?\]/s, '')
+    .trim();
+}
+
+function extractCompletionData(content, assignment) {
   const replyText = typeof content === 'string' ? content.trim() : '';
-  const scoreMatch = replyText.match(/\[SCORE:(\d)\]/);
-  const feedbackMatch = replyText.match(/\[FEEDBACK:(.*?)\]/s);
+  const scoreOptions = getAssignmentScoreOptions(assignment);
+  const scoreMatch = replyText.match(/\[SCORE:(-?\d+)\]/);
 
   if (!scoreMatch) {
     return {
       finished: false,
       score: null,
       feedback: null,
+      higherScoreTip: null,
       reply: replyText,
     };
   }
 
-  let score = parseInt(scoreMatch[1], 10);
-  if (score < 1) score = 1;
-  if (score > 3) score = 3;
+  const parsedScore = Number.parseInt(scoreMatch[1], 10);
+  const score = getClosestAllowedScore(scoreOptions, parsedScore) ?? getFallbackScore(scoreOptions);
 
   return {
     finished: true,
     score,
-    feedback: feedbackMatch ? feedbackMatch[1].trim() : '',
-    reply: replyText
-      .replace(/\[SCORE:\d\]/, '')
-      .replace(/\[FEEDBACK:.*?\]/s, '')
-      .trim(),
+    feedback: extractTaggedValue(replyText, 'FEEDBACK'),
+    higherScoreTip: extractTaggedValue(replyText, 'HIGHER_SCORE_TIP'),
+    reply: stripCompletionTags(replyText),
   };
 }
 
@@ -100,8 +110,8 @@ async function createChatReply(messages, options = {}) {
   const completion = await openai.chat.completions.create({
     model: MODEL_NAME,
     messages,
-    temperature: options.temperature ?? 0.8,
-    max_tokens: options.maxTokens ?? 500,
+    temperature: options.temperature ?? 0.7,
+    max_tokens: options.maxTokens ?? 650,
   });
 
   return completion.choices[0]?.message?.content?.trim() || '';
@@ -111,20 +121,21 @@ async function createForcedFinalReply(assignment, conversationMessages) {
   const attempts = [
     {
       temperature: 0.3,
-      maxTokens: 320,
+      maxTokens: 420,
       systemPrompt: buildSystemPrompt(assignment, { shouldForceFinish: true }),
     },
     {
       temperature: 0,
-      maxTokens: 260,
+      maxTokens: 420,
       systemPrompt: `${buildSystemPrompt(assignment, { shouldForceFinish: true })}
 
-=== 출력 형식 ===
-- 이번 응답은 반드시 마지막 응답이야
-- 추가 질문은 절대 하지 마
-- 2~4문장으로 짧게 마무리한 뒤 마지막 두 줄에 아래 형식을 정확히 넣어
+=== 출력 형식 재강조 ===
+- 이번 응답은 마지막 응답이야.
+- 추가 질문은 하지 마.
+- 2~4문장으로 짧게 마무리한 뒤 아래 3줄을 반드시 포함해.
 [SCORE:X]
-[FEEDBACK:한 문장 피드백]`,
+[FEEDBACK:현재 점수를 준 이유]
+[HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지]`,
     },
   ];
 
@@ -133,7 +144,7 @@ async function createForcedFinalReply(assignment, conversationMessages) {
       [{ role: 'system', content: attempt.systemPrompt }, ...conversationMessages],
       { temperature: attempt.temperature, maxTokens: attempt.maxTokens }
     );
-    const parsed = extractCompletionData(reply);
+    const parsed = extractCompletionData(reply, assignment);
 
     if (parsed.finished) {
       return parsed;
@@ -141,6 +152,22 @@ async function createForcedFinalReply(assignment, conversationMessages) {
   }
 
   return null;
+}
+
+function buildFallbackCompletion(assignment, partialReply = '') {
+  const scoreOptions = getAssignmentScoreOptions(assignment);
+  const fallbackScore = getFallbackScore(scoreOptions);
+  const nextHigherScore = getNextHigherScore(scoreOptions, fallbackScore);
+
+  return {
+    finished: true,
+    score: fallbackScore,
+    feedback: '핵심은 일부 설명했지만 이유나 과정이 충분히 드러나지 않았어.',
+    higherScoreTip: nextHigherScore === null
+      ? '이미 최고 점수야.'
+      : `${nextHigherScore}점을 받으려면 답만 말하지 말고 왜 그렇게 되는지와 오늘 수업에서 다룬 예시나 근거를 함께 설명해 줘.`,
+    reply: partialReply || '여기까지 설명한 내용을 바탕으로 이번 대화는 마무리할게.',
+  };
 }
 
 export async function POST(request) {
@@ -158,7 +185,7 @@ export async function POST(request) {
       !sessionToken
     ) {
       return NextResponse.json(
-        { success: false, error: '대화 세션이 유효하지 않습니다. 처음부터 다시 시작해주세요.' },
+        { success: false, error: '세션이 유효하지 않습니다. 처음부터 다시 시작해 주세요.' },
         { status: 400 }
       );
     }
@@ -197,7 +224,7 @@ export async function POST(request) {
       conversation.sessionTokenHash !== hashChatSessionToken(sessionToken)
     ) {
       return NextResponse.json(
-        { success: false, error: '대화 세션이 만료되었습니다. 처음부터 다시 시작해주세요.' },
+        { success: false, error: '세션이 만료되었습니다. 처음부터 다시 시작해 주세요.' },
         { status: 401 }
       );
     }
@@ -221,8 +248,9 @@ export async function POST(request) {
           { role: 'system', content: buildSystemPrompt(assignment, { shouldForceFinish }) },
           ...conversationMessages,
         ],
-        { temperature: shouldForceFinish ? 0.4 : 0.8, maxTokens: 500 }
-      )
+        { temperature: shouldForceFinish ? 0.35 : 0.7, maxTokens: 650 }
+      ),
+      assignment
     );
 
     if (shouldForceFinish && !parsedReply.finished) {
@@ -233,15 +261,10 @@ export async function POST(request) {
     }
 
     if (shouldForceFinish && !parsedReply.finished) {
-      parsedReply = {
-        finished: true,
-        score: 2,
-        feedback: '핵심은 설명했지만 더 또렷하고 구체적으로 말하면 더 좋은 점수를 받을 수 있어요.',
-        reply: parsedReply.reply || '여기까지 설명한 내용으로 이번 대화는 마무리할게! 수고했어 🦄',
-      };
+      parsedReply = buildFallbackCompletion(assignment, parsedReply.reply);
     }
 
-    const { reply, finished, score, feedback } = parsedReply;
+    const { reply, finished, score, feedback, higherScoreTip } = parsedReply;
 
     const updatedMessages = [
       ...existingMessages,
@@ -254,6 +277,7 @@ export async function POST(request) {
     if (finished) {
       updateData.score = score;
       updateData.feedback = feedback;
+      updateData.higherScoreTip = higherScoreTip;
       updateData.status = 'completed';
       updateData.approved = false;
       updateData.completedAt = FieldValue.serverTimestamp();
@@ -268,6 +292,7 @@ export async function POST(request) {
       finished,
       score,
       feedback,
+      higherScoreTip,
     });
 
     if (finished) {

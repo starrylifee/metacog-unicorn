@@ -1,15 +1,18 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 
-import { FieldValue, adminDb, serializeDoc } from '@/lib/serverDb';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
+import { DEFAULT_SCORE_OPTIONS, validateScoreOptions } from '@/lib/scoreConfig';
+import { FieldValue, adminDb, serializeDoc } from '@/lib/serverDb';
 
 const ENTRY_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function generateEntryCode() {
   let code = '';
-  for (let i = 0; i < 6; i += 1) {
+
+  for (let index = 0; index < 6; index += 1) {
     code += ENTRY_CODE_CHARS.charAt(Math.floor(Math.random() * ENTRY_CODE_CHARS.length));
   }
+
   return code;
 }
 
@@ -27,7 +30,7 @@ async function generateUniqueEntryCode() {
     }
   }
 
-  throw new RequestError('입장 코드를 생성하지 못했습니다. 다시 시도해주세요.', 503);
+  throw new RequestError('입장 코드를 생성하지 못했습니다. 다시 시도해 주세요.', 503);
 }
 
 export async function GET(request) {
@@ -64,11 +67,20 @@ export async function POST(request) {
       content = '',
       keywords = [],
       standards = [],
+      scoreOptions = DEFAULT_SCORE_OPTIONS,
     } = await request.json();
 
     if (!title.trim() || !content.trim()) {
       return NextResponse.json(
         { success: false, error: '과제 제목과 학습 내용은 필수입니다.' },
+        { status: 400 }
+      );
+    }
+
+    const validatedScoreOptions = validateScoreOptions(scoreOptions);
+    if (!validatedScoreOptions.ok) {
+      return NextResponse.json(
+        { success: false, error: validatedScoreOptions.error },
         { status: 400 }
       );
     }
@@ -88,7 +100,8 @@ export async function POST(request) {
       standards: Array.isArray(standards)
         ? standards.map((standard) => String(standard).trim()).filter(Boolean)
         : [],
-      maxScore: 3,
+      scoreOptions: validatedScoreOptions.scoreOptions,
+      maxScore: validatedScoreOptions.maxScore,
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

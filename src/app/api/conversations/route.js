@@ -1,6 +1,27 @@
-import { NextResponse } from 'next/server';
-import { CHAT_SESSION_COOKIE, createChatSessionToken, hashChatSessionToken } from '@/lib/chatSession';
+﻿import { NextResponse } from 'next/server';
+
+import {
+  CHAT_SESSION_COOKIE,
+  createChatSessionToken,
+  hashChatSessionToken,
+} from '@/lib/chatSession';
 import { FieldValue, adminDb } from '@/lib/serverDb';
+
+function serializeConversation(doc) {
+  const data = doc.data();
+
+  return {
+    id: doc.id,
+    studentCode: data.studentCode,
+    messages: Array.isArray(data.messages) ? data.messages : [],
+    score: data.score ?? null,
+    feedback: data.feedback ?? '',
+    higherScoreTip: data.higherScoreTip ?? '',
+    status: data.status || 'in_progress',
+    approved: Boolean(data.approved),
+    approvalStatus: data.approvalStatus || null,
+  };
+}
 
 export async function POST(request) {
   try {
@@ -14,7 +35,7 @@ export async function POST(request) {
       normalizedStudentCode > 99
     ) {
       return NextResponse.json(
-        { success: false, error: '필수 정보가 누락되었거나 형식이 올바르지 않습니다.' },
+        { success: false, error: '필수 정보가 없거나 형식이 올바르지 않습니다.' },
         { status: 400 }
       );
     }
@@ -27,7 +48,9 @@ export async function POST(request) {
       );
     }
 
-    // 중복 참여 방지: 같은 과제 + 같은 출석번호로 이미 참여했는지 확인
+    const sessionToken = request.cookies.get(CHAT_SESSION_COOKIE)?.value || null;
+    const sessionTokenHash = sessionToken ? hashChatSessionToken(sessionToken) : null;
+
     const existingSnap = await adminDb
       .collection('conversations')
       .where('assignmentId', '==', assignmentId)
@@ -36,14 +59,34 @@ export async function POST(request) {
       .get();
 
     if (!existingSnap.empty) {
+      const existingDoc = existingSnap.docs[0];
+      const existing = existingDoc.data();
+      const canResume =
+        existing.status === 'in_progress' &&
+        sessionTokenHash &&
+        existing.sessionTokenHash &&
+        existing.sessionTokenHash === sessionTokenHash;
+
+      if (canResume) {
+        return NextResponse.json({
+          success: true,
+          resumed: true,
+          conversationId: existingDoc.id,
+          conversation: serializeConversation(existingDoc),
+        });
+      }
+
       return NextResponse.json({
         success: false,
-        error: '이 출석번호로 이미 참여했어요! 선생님에게 문의하세요.',
+        error:
+          existing.status === 'completed'
+            ? '이미 참여가 완료된 번호입니다. 교사에게 문의해 주세요.'
+            : '이미 진행 중인 대화가 있습니다. 같은 기기에서 다시 접속해 주세요.',
         alreadyExists: true,
       });
     }
 
-    const sessionToken = createChatSessionToken();
+    const newSessionToken = createChatSessionToken();
     const docRef = await adminDb.collection('conversations').add({
       assignmentId,
       studentCode: normalizedStudentCode,
@@ -51,19 +94,22 @@ export async function POST(request) {
       messages: [],
       score: null,
       feedback: null,
+      higherScoreTip: null,
       status: 'in_progress',
       approved: false,
-      sessionTokenHash: hashChatSessionToken(sessionToken),
+      approvalStatus: null,
+      sessionTokenHash: hashChatSessionToken(newSessionToken),
       startedAt: FieldValue.serverTimestamp(),
       completedAt: null,
     });
 
     const response = NextResponse.json({
       success: true,
+      resumed: false,
       conversationId: docRef.id,
     });
 
-    response.cookies.set(CHAT_SESSION_COOKIE, sessionToken, {
+    response.cookies.set(CHAT_SESSION_COOKIE, newSessionToken, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
@@ -71,8 +117,8 @@ export async function POST(request) {
     });
 
     return response;
-  } catch (err) {
-    console.error('Create conversation error:', err);
+  } catch (error) {
+    console.error('Create conversation error:', error);
     return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
   }
 }

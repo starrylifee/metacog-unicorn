@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
+
+import { getAssignmentMaxScore, getAssignmentScoreOptions } from '@/lib/scoreConfig';
 import { adminDb } from '@/lib/serverDb';
 
 export async function GET(request) {
@@ -10,32 +12,35 @@ export async function GET(request) {
   }
 
   try {
-    const snap = await adminDb
+    const snapshot = await adminDb
       .collection('assignments')
       .where('entryCode', '==', code.toUpperCase())
       .where('isActive', '==', true)
       .limit(1)
       .get();
 
-    if (snap.empty) {
+    if (snapshot.empty) {
       return NextResponse.json({ success: false, error: '유효하지 않은 입장 코드입니다.' });
     }
 
-    const doc = snap.docs[0];
-    const data = doc.data();
+    const doc = snapshot.docs[0];
+    const assignment = doc.data();
+    const scoreOptions = getAssignmentScoreOptions(assignment);
 
     return NextResponse.json({
       success: true,
       assignment: {
         id: doc.id,
-        title: data.title,
-        subject: data.subject,
-        grade: data.grade,
-        entryCode: data.entryCode,
+        title: assignment.title,
+        subject: assignment.subject,
+        grade: assignment.grade,
+        entryCode: assignment.entryCode,
+        scoreOptions,
+        maxScore: getAssignmentMaxScore(assignment),
       },
     });
-  } catch (err) {
-    console.error('Lookup error:', err);
+  } catch (error) {
+    console.error('Lookup error:', error);
     return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
   }
 }

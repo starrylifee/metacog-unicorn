@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
+
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
@@ -30,6 +31,56 @@ async function getOwnedConversation(conversationId, teacherUid) {
   return { convRef, conv, assignment };
 }
 
+async function reserveApproval(conversationId, teacherUid) {
+  const convRef = adminDb.collection('conversations').doc(conversationId);
+
+  return adminDb.runTransaction(async (transaction) => {
+    const convSnap = await transaction.get(convRef);
+
+    if (!convSnap.exists) {
+      throw new RequestError('대화를 찾을 수 없습니다.', 404);
+    }
+
+    const conv = convSnap.data();
+    if (!conv.assignmentId) {
+      throw new RequestError('과제 정보가 없는 대화입니다.', 400);
+    }
+
+    const assignmentRef = adminDb.collection('assignments').doc(conv.assignmentId);
+    const assignmentSnap = await transaction.get(assignmentRef);
+
+    if (!assignmentSnap.exists) {
+      throw new RequestError('연결된 과제를 찾을 수 없습니다.', 404);
+    }
+
+    const assignment = assignmentSnap.data();
+    if (assignment.teacherId !== teacherUid) {
+      throw new RequestError('이 대화를 관리할 권한이 없습니다.', 403);
+    }
+
+    if (conv.approved) {
+      throw new RequestError('이미 승인된 제출입니다.', 409);
+    }
+
+    if (conv.approvalStatus === 'processing') {
+      throw new RequestError('현재 승인 처리 중입니다. 잠시 후 상태를 다시 확인해 주세요.', 409);
+    }
+
+    if (conv.status !== 'completed' || !Number.isFinite(conv.score)) {
+      throw new RequestError('아직 채점이 완료되지 않은 제출입니다.', 409);
+    }
+
+    transaction.update(convRef, {
+      approvalStatus: 'processing',
+      approvalRequestedAt: FieldValue.serverTimestamp(),
+      approvalRequestedBy: teacherUid,
+      lastGrowndError: null,
+    });
+
+    return { convRef, conv };
+  });
+}
+
 async function parseGrowndResponse(response) {
   const raw = await response.text();
   if (!raw) return null;
@@ -41,8 +92,23 @@ async function parseGrowndResponse(response) {
   }
 }
 
-// 승인: Grownd 포인트 부여
+async function updateApprovalFailure(convRef, message, status, options = {}) {
+  const { keepProcessing = false } = options;
+
+  await convRef.update({
+    approvalStatus: keepProcessing ? 'processing' : 'failed',
+    lastGrowndError: {
+      message,
+      status: status ?? null,
+      ambiguous: keepProcessing,
+      at: FieldValue.serverTimestamp(),
+    },
+  });
+}
+
 export async function POST(request) {
+  let reservedConversationRef = null;
+
   try {
     const teacher = await authenticateFirebaseRequest(request);
     const { conversationId } = await request.json();
@@ -51,17 +117,6 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: '대화 ID가 필요합니다.' }, { status: 400 });
     }
 
-    const { convRef, conv } = await getOwnedConversation(conversationId, teacher.uid);
-
-    if (conv.approved) {
-      return NextResponse.json({ success: false, error: '이미 승인된 대화입니다.' }, { status: 409 });
-    }
-
-    if (!conv.score) {
-      return NextResponse.json({ success: false, error: '아직 채점되지 않은 대화입니다.' }, { status: 409 });
-    }
-
-    // 교사의 Grownd 설정 가져오기
     const teacherRef = adminDb.collection('teachers').doc(teacher.uid);
     const teacherSnap = await teacherRef.get();
 
@@ -82,6 +137,9 @@ export async function POST(request) {
       );
     }
 
+    const { convRef, conv } = await reserveApproval(conversationId, teacher.uid);
+    reservedConversationRef = convRef;
+
     const growndResponse = await fetch(
       `https://growndcard.com/api/v1/classes/${growndClassId}/students/${conv.studentCode}/points`,
       {
@@ -93,7 +151,7 @@ export async function POST(request) {
         body: JSON.stringify({
           type: 'reward',
           points: conv.score,
-          description: `유니콘 메타인지 학습 완료 (${conv.score}점/3점)`,
+          description: `메타인지 유니콘 학습 완료 (${conv.score}점)`,
           source: 'MetacogUnicorn',
         }),
       }
@@ -102,13 +160,11 @@ export async function POST(request) {
     const growndResult = await parseGrowndResponse(growndResponse);
 
     if (!growndResponse.ok) {
-      await convRef.update({
-        lastGrowndError: {
-          message: growndResult?.message || 'Grownd 포인트 지급 실패',
-          status: growndResponse.status,
-          at: FieldValue.serverTimestamp(),
-        },
-      });
+      await updateApprovalFailure(
+        convRef,
+        growndResult?.message || 'Grownd 포인트 지급에 실패했습니다.',
+        growndResponse.status
+      );
 
       return NextResponse.json(
         {
@@ -120,30 +176,51 @@ export async function POST(request) {
       );
     }
 
-    // 승인 상태 업데이트
     await convRef.update({
       approved: true,
       approvedAt: FieldValue.serverTimestamp(),
       approvedBy: teacher.uid,
       growndAwardedAt: FieldValue.serverTimestamp(),
+      approvalStatus: 'approved',
       lastGrowndError: null,
     });
 
     return NextResponse.json({
       success: true,
       growndResult,
-      message: '승인 완료! 포인트가 부여되었습니다.',
+      message: '승인이 완료되었습니다.',
     });
-  } catch (err) {
-    if (err instanceof RequestError) {
-      return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+  } catch (error) {
+    if (error instanceof RequestError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }
-    console.error('Approve error:', err);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+
+    if (reservedConversationRef) {
+      try {
+        await updateApprovalFailure(
+          reservedConversationRef,
+          error?.message || '승인 처리 상태를 확인할 수 없는 오류가 발생했습니다.',
+          null,
+          { keepProcessing: true }
+        );
+      } catch (updateError) {
+        console.error('Failed to persist ambiguous approval state:', updateError);
+      }
+    }
+
+    console.error('Approve error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: reservedConversationRef
+          ? '승인 처리 상태를 확정하지 못했습니다. 중복 지급을 막기 위해 자동 재시도는 막아 두었습니다.'
+          : '서버 오류',
+      },
+      { status: 500 }
+    );
   }
 }
 
-// 리셋: 대화 기록 삭제 (재참여 가능하게)
 export async function DELETE(request) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
@@ -154,18 +231,34 @@ export async function DELETE(request) {
       return NextResponse.json({ success: false, error: '대화 ID가 필요합니다.' }, { status: 400 });
     }
 
-    const { convRef } = await getOwnedConversation(conversationId, teacher.uid);
+    const { convRef, conv } = await getOwnedConversation(conversationId, teacher.uid);
+
+    if (conv.approved) {
+      return NextResponse.json(
+        { success: false, error: '이미 승인된 제출은 리셋할 수 없습니다.' },
+        { status: 409 }
+      );
+    }
+
+    if (conv.approvalStatus === 'processing') {
+      return NextResponse.json(
+        { success: false, error: '현재 승인 처리 중인 제출은 리셋할 수 없습니다.' },
+        { status: 409 }
+      );
+    }
+
     await convRef.delete();
 
     return NextResponse.json({
       success: true,
-      message: '리셋 완료! 학생이 다시 참여할 수 있습니다.',
+      message: '리셋이 완료되었습니다. 학생이 다시 참여할 수 있습니다.',
     });
-  } catch (err) {
-    if (err instanceof RequestError) {
-      return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+  } catch (error) {
+    if (error instanceof RequestError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }
-    console.error('Reset error:', err);
+
+    console.error('Reset error:', error);
     return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
   }
 }
