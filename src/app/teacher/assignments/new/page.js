@@ -10,8 +10,12 @@ import { auth } from '@/lib/firebase';
 import { createAssignment } from '@/lib/firestore';
 import {
   DEFAULT_SCORE_OPTIONS,
+  DEFAULT_SCORING_STYLE,
   formatScoreOptions,
+  getScoringStyleDescription,
+  getScoringStyleLabel,
   parseScoreOptionsInput,
+  SCORING_STYLE_OPTIONS,
   SCORE_PRESETS,
 } from '@/lib/scoreConfig';
 
@@ -55,6 +59,7 @@ export default function NewAssignment() {
     content: '',
     keywords: '',
     scoreOptionsInput: formatScoreOptions(DEFAULT_SCORE_OPTIONS),
+    scoringStyle: DEFAULT_SCORING_STYLE,
   });
 
   useEffect(() => {
@@ -195,11 +200,13 @@ export default function NewAssignment() {
           .filter(Boolean),
         standards: [selectedUnit, selectedLesson],
         scoreOptions: parsedScoreOptions.scoreOptions,
+        scoringStyle: form.scoringStyle,
       });
 
       setCreated({
         ...result,
         scoreOptions: parsedScoreOptions.scoreOptions,
+        scoringStyle: form.scoringStyle,
       });
     } catch (error) {
       console.error('Create assignment error:', error);
@@ -249,6 +256,9 @@ export default function NewAssignment() {
             <p className="form-hint" style={{ marginTop: '1rem' }}>
               점수 단계: {formatScoreOptions(created.scoreOptions, ' / ')}
             </p>
+            <p className="form-hint" style={{ marginTop: '0.35rem' }}>
+              채점 성향: {getScoringStyleLabel(created.scoringStyle)} ({getScoringStyleDescription(created.scoringStyle)})
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
@@ -277,7 +287,7 @@ export default function NewAssignment() {
 
       <div className="content-wrapper content-medium">
         <h1 className="heading-section">새 수학 과제 만들기</h1>
-        <p className="subtitle">오늘 수업 범위와 점수 단계를 함께 설정해 주세요.</p>
+        <p className="subtitle">오늘 수업 범위와 점수 단계, 채점 성향을 함께 설정해 주세요.</p>
 
         <form onSubmit={handleSubmit}>
           <div className="card-glass" style={{ marginBottom: '1.5rem' }}>
@@ -426,6 +436,40 @@ export default function NewAssignment() {
             <h3 style={{ marginBottom: '1.5rem', fontSize: '1rem', color: 'var(--purple-light)' }}>
               점수 단계 설정
             </h3>
+
+            <div className="form-group">
+              <label className="form-label">채점 성향</label>
+              <div style={{ display: 'grid', gap: '0.75rem' }}>
+                {SCORING_STYLE_OPTIONS.map((option) => {
+                  const isSelected = form.scoringStyle === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, scoringStyle: option.value }))}
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.9rem 1rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: `1px solid ${isSelected ? 'var(--cyan-primary)' : 'var(--border-color)'}`,
+                        background: isSelected ? 'rgba(34, 211, 238, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{option.label}</div>
+                      <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                        {option.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="form-hint">
+                이 설정은 관련 있는 답변에만 적용됩니다. 장난, 회피, 엉뚱한 답은 항상 낮은 점수를 받습니다.
+              </p>
+            </div>
 
             <div className="form-group">
               <label className="form-label">빠른 프리셋</label>

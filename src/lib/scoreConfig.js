@@ -1,9 +1,28 @@
 export const DEFAULT_SCORE_OPTIONS = [0, 1, 2, 3, 4, 5];
+export const DEFAULT_SCORING_STYLE = 'balanced';
 
 export const SCORE_PRESETS = [
   { id: 'default-0-5', label: '기본 0,1,2,3,4,5', values: DEFAULT_SCORE_OPTIONS },
   { id: 'compact-0-3', label: '0,1,2,3', values: [0, 1, 2, 3] },
   { id: 'inflation-0-10-20-30', label: '0,10,20,30', values: [0, 10, 20, 30] },
+];
+
+export const SCORING_STYLE_OPTIONS = [
+  {
+    value: 'strict',
+    label: '짜게',
+    description: '핵심과 이유가 분명해야 중간 이상 점수를 줍니다.',
+  },
+  {
+    value: 'balanced',
+    label: '보통',
+    description: '핵심 이해와 설명 수준을 균형 있게 봅니다.',
+  },
+  {
+    value: 'generous',
+    label: '후하게',
+    description: '핵심 일부만 맞아도 중간 점수를 조금 더 열어 둡니다.',
+  },
 ];
 
 function toInteger(value) {
@@ -112,6 +131,25 @@ export function parseScoreOptionsInput(input) {
   }
 
   return validateScoreOptions(tokens.map((value) => Number(value)));
+}
+
+export function normalizeScoringStyle(value) {
+  return SCORING_STYLE_OPTIONS.some((option) => option.value === value)
+    ? value
+    : DEFAULT_SCORING_STYLE;
+}
+
+export function getScoringStyleLabel(value) {
+  const normalized = normalizeScoringStyle(value);
+  return SCORING_STYLE_OPTIONS.find((option) => option.value === normalized)?.label || '보통';
+}
+
+export function getScoringStyleDescription(value) {
+  const normalized = normalizeScoringStyle(value);
+  return (
+    SCORING_STYLE_OPTIONS.find((option) => option.value === normalized)?.description ||
+    '핵심 이해와 설명 수준을 균형 있게 봅니다.'
+  );
 }
 
 export function getAssignmentScoreOptions(assignment) {

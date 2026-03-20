@@ -1,7 +1,12 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
-import { DEFAULT_SCORE_OPTIONS, validateScoreOptions } from '@/lib/scoreConfig';
+import {
+  DEFAULT_SCORE_OPTIONS,
+  DEFAULT_SCORING_STYLE,
+  normalizeScoringStyle,
+  validateScoreOptions,
+} from '@/lib/scoreConfig';
 import { FieldValue, adminDb, serializeDoc } from '@/lib/serverDb';
 
 const ENTRY_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -68,6 +73,7 @@ export async function POST(request) {
       keywords = [],
       standards = [],
       scoreOptions = DEFAULT_SCORE_OPTIONS,
+      scoringStyle = DEFAULT_SCORING_STYLE,
     } = await request.json();
 
     if (!title.trim() || !content.trim()) {
@@ -102,6 +108,7 @@ export async function POST(request) {
         : [],
       scoreOptions: validatedScoreOptions.scoreOptions,
       maxScore: validatedScoreOptions.maxScore,
+      scoringStyle: normalizeScoringStyle(scoringStyle),
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

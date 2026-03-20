@@ -17,6 +17,7 @@ import {
   getAssignmentMaxScore,
   getAssignmentScoreOptions,
   getNextHigherScore,
+  getScoringStyleLabel,
 } from '@/lib/scoreConfig';
 
 function canApproveConversation(conversation) {
@@ -447,6 +448,9 @@ export default function AssignmentDetail() {
                 점수 단계: {scoreScaleLabel}
               </p>
             )}
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              채점 성향: {getScoringStyleLabel(assignment.scoringStyle)}
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
