@@ -197,9 +197,14 @@ export default function TeacherDashboard() {
               과제를 만들고 학생 결과를 확인할 수 있습니다.
             </p>
           </div>
-          <Link href="/teacher/assignments/new" className="btn btn-primary">
-            새 과제 만들기
-          </Link>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Link href="/teacher/assignments/new" className="btn btn-secondary">
+              ➕ 수학 과제
+            </Link>
+            <Link href="/teacher/assignments/art/new" className="btn btn-primary">
+              🎨 미술 과제
+            </Link>
+          </div>
         </div>
 
         <div className="stats-row">

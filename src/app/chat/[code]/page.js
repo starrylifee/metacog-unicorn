@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -6,15 +6,23 @@ import { useParams, useSearchParams } from 'next/navigation';
 
 import { formatScoreOptions, getAssignmentMaxScore, getNextHigherScore } from '@/lib/scoreConfig';
 
-function buildWelcomeMessage(title) {
+function buildWelcomeMessage(assignment) {
+  if (assignment?.type === 'art') {
+    const paintingTitle = assignment.paintingTitle || assignment.title;
+    const artist = assignment.artist ? ` (${assignment.artist}${assignment.year ? ', ' + assignment.year : ''})` : '';
+    return {
+      role: 'unicorn',
+      content: `안녕! 나는 미술 유니콘이야. 🎨\n\n오늘은 **"${paintingTitle}"${artist}**을 함께 감상할 거야.\n그림을 천천히 살펴보고, 눈에 띄는 것부터 자유롭게 말해 줘!`,
+    };
+  }
   return {
     role: 'unicorn',
-    content: `안녕! 나는 메타인지 유니콘이야.\n\n오늘 **"${title}"**에서 배운 내용을 네 말로 설명해 줘.\n필요한 부분만 짧게 더 물어보고 마무리할게.`,
+    content: `안녕! 나는 메타인지 유니콘이야.\n\n오늘 **"${assignment?.title}"**에서 배운 내용을 네 말로 설명해 줘.\n필요한 부분만 짧게 더 물어보고 마무리할게.`,
   };
 }
 
-function buildInitialMessages(title, savedMessages = []) {
-  const welcomeMessage = buildWelcomeMessage(title);
+function buildInitialMessages(assignment, savedMessages = []) {
+  const welcomeMessage = buildWelcomeMessage(assignment);
   return savedMessages.length > 0 ? [welcomeMessage, ...savedMessages] : [welcomeMessage];
 }
 
@@ -104,7 +112,7 @@ export default function ChatPage() {
             : [];
 
           setConversationId(conversationData.conversationId);
-          setMessages(buildInitialMessages(data.assignment.title, restoredMessages));
+          setMessages(buildInitialMessages(data.assignment, restoredMessages));
 
           if (restoredConversation?.status === 'completed') {
             setFinished(true);
@@ -245,6 +253,19 @@ export default function ChatPage() {
         </div>
 
         <div className="chat-messages">
+          {assignment.type === 'art' && assignment.imageUrl && (
+            <div style={{ marginBottom: '1rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'rgba(0,0,0,0.25)', textAlign: 'center' }}>
+              <img
+                src={assignment.imageUrl}
+                alt={assignment.paintingTitle || assignment.title}
+                style={{ maxWidth: '100%', maxHeight: '260px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.4rem 0.75rem' }}>
+                {assignment.paintingTitle || assignment.title}{assignment.artist ? ` · ${assignment.artist}` : ''}{assignment.year ? ` (${assignment.year})` : ''}
+              </p>
+            </div>
+          )}
           {messages.map((message, index) => (
             <div key={index} className={`chat-bubble chat-bubble-${message.role}`}>
               {message.role === 'unicorn' && <div className="chat-sender">메타인지 유니콘</div>}

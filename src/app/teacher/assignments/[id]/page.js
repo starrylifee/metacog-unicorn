@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -192,7 +192,10 @@ export default function AssignmentDetail() {
       const data = await response.json();
 
       if (!data.success) {
-        alert(data.error || '승인 처리에 실패했습니다.');
+        const detail = data.growndResult
+          ? `\n\n[Grownd 응답]\n${JSON.stringify(data.growndResult, null, 2)}`
+          : '';
+        alert((data.error || '승인 처리에 실패했습니다.') + detail);
       }
 
       await loadData();

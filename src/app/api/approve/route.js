@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 import { FieldValue, adminDb } from '@/lib/serverDb';
@@ -140,36 +140,58 @@ export async function POST(request) {
     const { convRef, conv } = await reserveApproval(conversationId, teacher.uid);
     reservedConversationRef = convRef;
 
-    const growndResponse = await fetch(
-      `https://growndcard.com/api/v1/classes/${growndClassId}/students/${conv.studentCode}/points`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': growndApiKey,
-        },
-        body: JSON.stringify({
-          type: 'reward',
-          points: conv.score,
-          description: `메타인지 유니콘 학습 완료 (${conv.score}점)`,
-          source: 'MetacogUnicorn',
-        }),
-      }
-    );
+    const growndAbort = new AbortController();
+    const growndTimeout = setTimeout(() => growndAbort.abort(), 8000);
+
+    let growndResponse;
+    try {
+      growndResponse = await fetch(
+        `https://growndcard.com/api/v1/classes/${growndClassId}/students/${conv.studentCode}/points`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': growndApiKey,
+          },
+          body: JSON.stringify({
+            type: 'reward',
+            points: conv.score,
+            description: `메타인지 유니콘 학습 완료 (${conv.score}점)`,
+            source: 'MetacogUnicorn',
+          }),
+          signal: growndAbort.signal,
+        }
+      );
+    } catch (fetchError) {
+      clearTimeout(growndTimeout);
+      const isTimeout = fetchError?.name === 'AbortError';
+      const errMsg = isTimeout
+        ? 'Grownd 서버 응답 시간 초과 (8초). 잠시 후 다시 시도해 주세요.'
+        : `Grownd 연결 실패: ${fetchError?.message || '알 수 없는 오류'}`;
+      await updateApprovalFailure(reservedConversationRef ?? convRef, errMsg, null);
+      return NextResponse.json({ success: false, error: errMsg }, { status: 502 });
+    }
+    clearTimeout(growndTimeout);
 
     const growndResult = await parseGrowndResponse(growndResponse);
+
+    const growndErrorDetail = growndResult?.message
+      || (growndResult?.raw ? `Grownd 응답(${growndResponse.status}): ${String(growndResult.raw).slice(0, 200)}` : null)
+      || `Grownd 포인트 지급 실패 (HTTP ${growndResponse.status})`;
+
+    console.log('[Grownd] status:', growndResponse.status, '| result:', JSON.stringify(growndResult));
 
     if (!growndResponse.ok) {
       await updateApprovalFailure(
         convRef,
-        growndResult?.message || 'Grownd 포인트 지급에 실패했습니다.',
+        growndErrorDetail,
         growndResponse.status
       );
 
       return NextResponse.json(
         {
           success: false,
-          error: growndResult?.message || 'Grownd 포인트 지급에 실패했습니다.',
+          error: growndErrorDetail,
           growndResult,
         },
         { status: 502 }
