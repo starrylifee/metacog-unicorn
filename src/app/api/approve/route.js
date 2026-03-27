@@ -147,7 +147,26 @@ export async function POST(request) {
       );
     }
 
+    // Grownd는 points 0을 허용하지 않음 (0.01~1000 범위)
+    // 0점은 Grownd 포인트 지급 없이 승인 처리만 함
+    if (!conv.score || conv.score <= 0) {
+      await convRef.update({
+        approved: true,
+        approvedAt: FieldValue.serverTimestamp(),
+        approvedBy: teacher.uid,
+        growndAwardedAt: null,
+        approvalStatus: 'approved',
+        lastGrowndError: null,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: '승인 완료 (0점은 Grownd 포인트 지급 없이 처리됩니다).',
+      });
+    }
+
     const growndAbort = new AbortController();
+
     const growndTimeout = setTimeout(() => growndAbort.abort(), 5000);
 
     let growndResponse;
