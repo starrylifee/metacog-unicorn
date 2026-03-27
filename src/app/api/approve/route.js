@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
+export const maxDuration = 30; // Vercel Pro+ 에서 최대 30초 허용
+
 async function getOwnedConversation(conversationId, teacherUid) {
   const convRef = adminDb.collection('conversations').doc(conversationId);
   const convSnap = await convRef.get();
@@ -117,10 +119,17 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: '대화 ID가 필요합니다.' }, { status: 400 });
     }
 
+    // teacherSettings 조회와 approval 예약을 병렬로 실행해 시간 절약
     const teacherRef = adminDb.collection('teachers').doc(teacher.uid);
-    const teacherSnap = await teacherRef.get();
+    const [teacherSnap, { convRef, conv }] = await Promise.all([
+      teacherRef.get(),
+      reserveApproval(conversationId, teacher.uid),
+    ]);
+    reservedConversationRef = convRef;
 
     if (!teacherSnap.exists) {
+      // 이미 processing으로 예약됐으므로 실패로 마킹
+      await updateApprovalFailure(convRef, '교사 설정을 찾을 수 없습니다.', null);
       return NextResponse.json(
         { success: false, error: '교사 설정을 찾을 수 없습니다.' },
         { status: 400 }
@@ -131,17 +140,15 @@ export async function POST(request) {
     const { growndApiKey, growndClassId } = teacherSettings;
 
     if (!growndApiKey || !growndClassId) {
+      await updateApprovalFailure(convRef, 'Grownd 설정이 완료되지 않았습니다.', null);
       return NextResponse.json(
         { success: false, error: 'Grownd 설정이 완료되지 않았습니다.' },
         { status: 400 }
       );
     }
 
-    const { convRef, conv } = await reserveApproval(conversationId, teacher.uid);
-    reservedConversationRef = convRef;
-
     const growndAbort = new AbortController();
-    const growndTimeout = setTimeout(() => growndAbort.abort(), 8000);
+    const growndTimeout = setTimeout(() => growndAbort.abort(), 5000);
 
     let growndResponse;
     try {

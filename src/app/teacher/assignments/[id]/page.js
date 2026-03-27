@@ -231,10 +231,13 @@ export default function AssignmentDetail() {
           headers,
           body: JSON.stringify({ conversationId: conversation.id }),
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => ({ success: false, error: `서버 오류 (HTTP ${response.status})` }));
 
         if (!response.ok || !data.success) {
-          throw new Error(data.error || `${conversation.studentCode}번 승인에 실패했습니다.`);
+          const errMsg = typeof data.error === 'string'
+            ? data.error
+            : (data.error ? JSON.stringify(data.error) : `${conversation.studentCode}번 승인에 실패했습니다.`);
+          throw new Error(errMsg);
         }
       }
 
