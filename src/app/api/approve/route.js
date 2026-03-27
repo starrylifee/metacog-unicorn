@@ -176,7 +176,15 @@ export async function POST(request) {
     const growndResult = await parseGrowndResponse(growndResponse);
 
     const growndErrorDetail = growndResult?.message
-      || (growndResult?.raw ? `Grownd 응답(${growndResponse.status}): ${String(growndResult.raw).slice(0, 200)}` : null)
+      || growndResult?.error
+      || growndResult?.detail
+      || growndResult?.msg
+      || (growndResult?.raw
+          ? `Grownd 응답(${growndResponse.status}): ${String(growndResult.raw).slice(0, 300)}`
+          : null)
+      || (growndResult
+          ? `Grownd 응답(${growndResponse.status}): ${JSON.stringify(growndResult).slice(0, 300)}`
+          : null)
       || `Grownd 포인트 지급 실패 (HTTP ${growndResponse.status})`;
 
     console.log('[Grownd] status:', growndResponse.status, '| result:', JSON.stringify(growndResult));
