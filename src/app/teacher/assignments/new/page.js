@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -60,6 +60,7 @@ export default function NewAssignment() {
     keywords: '',
     scoreOptionsInput: formatScoreOptions(DEFAULT_SCORE_OPTIONS),
     scoringStyle: DEFAULT_SCORING_STYLE,
+    minTurns: 2,
   });
 
   useEffect(() => {
@@ -201,6 +202,7 @@ export default function NewAssignment() {
         standards: [selectedUnit, selectedLesson],
         scoreOptions: parsedScoreOptions.scoreOptions,
         scoringStyle: form.scoringStyle,
+        minTurns: form.minTurns,
       });
 
       setCreated({
@@ -511,6 +513,43 @@ export default function NewAssignment() {
                   {parsedScoreOptions.error}
                 </p>
               )}
+            </div>
+          </div>
+
+          <div className="card-glass" style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem', color: 'var(--purple-light)' }}>
+              대화 횟수 설정
+            </h3>
+            <p className="form-hint" style={{ marginBottom: '1.25rem' }}>
+              유니콘이 채점하기 전에 학생과 최소 몇 번 대화할지 설정합니다.
+            </p>
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              {[
+                { value: 1, label: '1회', desc: '학생이 한 번 답하면 바로 채점 가능' },
+                { value: 2, label: '2회 (권장)', desc: '답변 확인 후 한 번 더 보충할 기회 제공' },
+                { value: 3, label: '3회', desc: '충분한 대화 후 채점 (3회가 최대)' },
+              ].map((option) => {
+                const isSelected = form.minTurns === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, minTurns: option.value }))}
+                    style={{
+                      textAlign: 'left',
+                      padding: '0.9rem 1rem',
+                      borderRadius: 'var(--radius-md)',
+                      border: `1px solid ${isSelected ? 'var(--cyan-primary)' : 'var(--border-color)'}`,
+                      background: isSelected ? 'rgba(34, 211, 238, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{option.label}</div>
+                    <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>{option.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

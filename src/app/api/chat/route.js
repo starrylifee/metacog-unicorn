@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 import { CHAT_SESSION_COOKIE, hashChatSessionToken } from '@/lib/chatSession';
@@ -51,7 +51,7 @@ function buildScoringStyleGuidance(scoreOptions, scoringStyle) {
 }
 
 function buildSystemPrompt(assignment, options = {}) {
-  const { shouldForceFinish = false } = options;
+  const { shouldForceFinish = false, allowFinish = true } = options;
   const keywords = (assignment.keywords || []).join(', ');
   const scoreOptions = getAssignmentScoreOptions(assignment);
   const maxScore = getAssignmentMaxScore(assignment);
@@ -102,7 +102,7 @@ ${buildScoringStyleGuidance(scoreOptions, scoringStyle)}
 - HIGHER_SCORE_TIP에는 막연한 조언 말고, 학생이 실제로 어떤 내용을 더 말했어야 하는지 써.
 - HIGHER_SCORE_TIP도 오늘 수업 범위를 벗어나면 안 돼.
 - 학생이 "모르겠어"처럼 짧게 답해도 남은 내용으로 평가하고 마무리해.
-- ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : '학생이 충분히 설명했거나 턴이 거의 다 찼다면 더 캐묻지 말고 종료해.'}`;
+- ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : allowFinish ? '학생이 충분히 설명했거나 턴이 거의 다 찼다면 더 캐묻지 말고 종료해.' : `아직 학생 답변이 충분히 쌓이지 않았어. [SCORE], [FEEDBACK], [HIGHER_SCORE_TIP] 태그를 절대 사용하지 말고, 핵심이 부족한 부분을 한두 가지만 짧게 더 물어봐.`}`;
 }
 
 function extractTaggedValue(text, tagName) {
@@ -272,7 +272,11 @@ export async function POST(request) {
     const existingMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
     const studentTurnCount =
       existingMessages.filter((message) => message.role === 'student').length + 1;
+    const minTurns = Number.isInteger(assignment.minTurns) && assignment.minTurns >= 1
+      ? assignment.minTurns
+      : 2;
     const shouldForceFinish = studentTurnCount >= MAX_STUDENT_TURNS;
+    const allowFinish = studentTurnCount >= minTurns;
 
     const conversationMessages = [
       ...existingMessages.map((message) => ({
@@ -285,13 +289,24 @@ export async function POST(request) {
     let parsedReply = extractCompletionData(
       await createChatReply(
         [
-          { role: 'system', content: buildSystemPrompt(assignment, { shouldForceFinish }) },
+          { role: 'system', content: buildSystemPrompt(assignment, { shouldForceFinish, allowFinish }) },
           ...conversationMessages,
         ],
         { temperature: shouldForceFinish ? 0.35 : 0.7, maxTokens: 650 }
       ),
       assignment
     );
+
+    // 서버 사이드 가드: 최소 턴 미달 시 AI가 멋대로 종료하는 것을 차단
+    if (parsedReply.finished && !allowFinish) {
+      parsedReply = {
+        finished: false,
+        score: null,
+        feedback: null,
+        higherScoreTip: null,
+        reply: parsedReply.reply || '조금 더 설명해 줄 수 있어? 어떤 부분이 특히 중요했는지 알려줘.',
+      };
+    }
 
     if (shouldForceFinish && !parsedReply.finished) {
       const forcedFinalReply = await createForcedFinalReply(assignment, conversationMessages);

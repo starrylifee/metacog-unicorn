@@ -74,7 +74,10 @@ export async function POST(request) {
       standards = [],
       scoreOptions = DEFAULT_SCORE_OPTIONS,
       scoringStyle = DEFAULT_SCORING_STYLE,
+      minTurns = 2,
     } = await request.json();
+
+    const normalizedMinTurns = Math.min(5, Math.max(1, Number.isInteger(Number(minTurns)) ? Number(minTurns) : 2));
 
     if (!title.trim() || !content.trim()) {
       return NextResponse.json(
@@ -109,6 +112,7 @@ export async function POST(request) {
       scoreOptions: validatedScoreOptions.scoreOptions,
       maxScore: validatedScoreOptions.maxScore,
       scoringStyle: normalizeScoringStyle(scoringStyle),
+      minTurns: normalizedMinTurns,
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
