@@ -64,6 +64,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
+    const body = await request.json();
     const {
       title = '',
       subject = '',
@@ -75,13 +76,34 @@ export async function POST(request) {
       scoreOptions = DEFAULT_SCORE_OPTIONS,
       scoringStyle = DEFAULT_SCORING_STYLE,
       minTurns = 2,
-    } = await request.json();
+      // 미술 과제 전용 필드
+      type = 'math',
+      paintingTitle = '',
+      artist = '',
+      year = '',
+      imageUrl = '',
+      paintingContext = '',
+      appreciationLevel = null,
+      appreciationLevelLabel = '',
+      appreciationPrompt = '',
+      difficultyLevel = '',
+      difficultyLabel = '',
+      difficultyPrompt = '',
+    } = body;
 
     const normalizedMinTurns = Math.min(5, Math.max(1, Number.isInteger(Number(minTurns)) ? Number(minTurns) : 2));
 
-    if (!title.trim() || !content.trim()) {
+    if (!title.trim()) {
       return NextResponse.json(
-        { success: false, error: '과제 제목과 학습 내용은 필수입니다.' },
+        { success: false, error: '과제 제목은 필수입니다.' },
+        { status: 400 }
+      );
+    }
+
+    // 수학 과제는 content 필수, 미술 과제는 paintingTitle + artist 필수
+    if (type !== 'art' && !content.trim()) {
+      return NextResponse.json(
+        { success: false, error: '학습 내용은 필수입니다.' },
         { status: 400 }
       );
     }
@@ -95,9 +117,10 @@ export async function POST(request) {
     }
 
     const entryCode = await generateUniqueEntryCode();
-    const docRef = await adminDb.collection('assignments').add({
+    const assignmentData = {
       teacherId: teacher.uid,
       entryCode,
+      type,
       title: title.trim(),
       subject: subject.trim(),
       grade: grade.trim(),
@@ -116,7 +139,24 @@ export async function POST(request) {
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+
+    // 미술 과제 전용 필드 추가
+    if (type === 'art') {
+      assignmentData.paintingTitle = String(paintingTitle).trim();
+      assignmentData.artist = String(artist).trim();
+      assignmentData.year = String(year).trim();
+      assignmentData.imageUrl = String(imageUrl).trim();
+      assignmentData.paintingContext = String(paintingContext).trim();
+      assignmentData.appreciationLevel = appreciationLevel;
+      assignmentData.appreciationLevelLabel = String(appreciationLevelLabel).trim();
+      assignmentData.appreciationPrompt = String(appreciationPrompt).trim();
+      assignmentData.difficultyLevel = String(difficultyLevel).trim();
+      assignmentData.difficultyLabel = String(difficultyLabel).trim();
+      assignmentData.difficultyPrompt = String(difficultyPrompt).trim();
+    }
+
+    const docRef = await adminDb.collection('assignments').add(assignmentData);
 
     return NextResponse.json({
       success: true,

@@ -79,7 +79,7 @@ async function reserveApproval(conversationId, teacherUid) {
       lastGrowndError: null,
     });
 
-    return { convRef, conv };
+    return { convRef, conv, assignmentType: assignment.type || 'math' };
   });
 }
 
@@ -121,7 +121,7 @@ export async function POST(request) {
 
     // teacherSettings 조회와 approval 예약을 병렬로 실행해 시간 절약
     const teacherRef = adminDb.collection('teachers').doc(teacher.uid);
-    const [teacherSnap, { convRef, conv }] = await Promise.all([
+    const [teacherSnap, { convRef, conv, assignmentType }] = await Promise.all([
       teacherRef.get(),
       reserveApproval(conversationId, teacher.uid),
     ]);
@@ -182,7 +182,9 @@ export async function POST(request) {
           body: JSON.stringify({
             type: 'reward',
             points: conv.score,
-            description: `메타인지 유니콘 학습 완료 (${conv.score}점)`,
+            description: assignmentType === 'art'
+              ? `미술 유니콘 명화 감상 완료 (${conv.score}점)`
+              : `메타인지 유니콘 학습 완료 (${conv.score}점)`,
             source: 'MetacogUnicorn',
           }),
           signal: growndAbort.signal,

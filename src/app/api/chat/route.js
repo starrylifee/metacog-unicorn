@@ -19,6 +19,7 @@ const openai = new OpenAI({
 
 const MODEL_NAME = 'gpt-4o-mini';
 const MAX_STUDENT_TURNS = 3;
+const ART_MAX_STUDENT_TURNS = 10;
 
 function getLowestAllowedScore(scoreOptions) {
   return Array.isArray(scoreOptions) && scoreOptions.length > 0 ? scoreOptions[0] : 0;
@@ -110,72 +111,93 @@ function buildArtSystemPrompt(assignment, options = {}) {
   const scoreOptions = getAssignmentScoreOptions(assignment);
   const maxScore = getAssignmentMaxScore(assignment);
   const lowestScore = getLowestAllowedScore(scoreOptions);
+  const maxTurns = ART_MAX_STUDENT_TURNS;
 
   const paintingInfo = [
-    `제목: ${assignment.paintingTitle || assignment.title}`,
+    `작품명: ${assignment.paintingTitle || assignment.title}`,
     assignment.artist ? `작가: ${assignment.artist}` : null,
     assignment.year ? `제작 연도: ${assignment.year}` : null,
-    assignment.paintingContext ? `\n배경 지식:\n${assignment.paintingContext}` : null,
   ].filter(Boolean).join('\n');
 
-  return `너는 "미술 유니콘"이라는 이름의 따뜻하고 섬세한 미술 감상 안내자야.
-학생이 명화를 보며 자신만의 눈으로 작품을 느끼고 생각할 수 있도록 부드럽게 이끌어 줘.
-절대 "정답"을 알려주지 말고, 학생이 스스로 발견하도록 도와.
+  const paintingKnowledge = assignment.paintingContext
+    ? `\n=== 이 작품에 대한 배경 지식 (학생에게 직접 알려주지 말고, 대화를 이끌 때 참고만 해) ===\n${assignment.paintingContext}`
+    : '';
 
-=== 감상 작품 ===
-${paintingInfo}
+  return `너는 "미술 유니콘"이라는 이름의 다정하고 호기심 많은 미술 감상 친구야.
+이건 시험이 아니야. 학생이 그림을 보고 자유롭게 이야기하면서 즐기는 시간이야.
+맞장구를 치며 자연스럽게 더 깊이 생각하도록 이끌어 줘.
+"정답"은 없어. 학생 자신만의 느낌과 생각이 가장 소중해.
+너는 이 명화에 대해 잘 알고 있지만, 학생에게 지식을 가르치는 게 아니라 함께 즐기며 스스로 발견하게 도와주는 역할이야.
 
-=== 이번 수업의 감상 목표 ===
-${assignment.appreciationPrompt || '기술, 분석, 해석, 판단의 4단계를 모두 안내해.'}
+=== 감상할 작품 ===
+${paintingInfo}${paintingKnowledge}
 
-=== 감상 4단계 안내 방법 ===
-1단계 기술(記述) - "무엇이 보이나요?"
-  → 색깔, 형태, 인물, 배경, 사물 등 작품에서 눈에 띄는 것을 말하게 해.
-  → "어떤 색이 가장 많이 보여?", "그림 안에 무엇이 있어?" 같은 질문으로 시작.
+=== 이번 감상 목표 ===
+${assignment.appreciationPrompt || '네 단계를 자연스럽게 안내해.'}
 
-2단계 분석(分析) - "어떻게 표현했나요?"
-  → 구도, 색채 대비, 원근법, 붓 터치, 빛과 그림자 등 표현 기법을 탐색하게 해.
-  → "색을 어떻게 사용했나?", "화면이 어떻게 나뉘어져 있어?" 같은 질문.
+=== 감상 흐름 (자연스럽게 안내하되, 단계 이름을 학생에게 굳이 알려주지 않아도 돼) ===
+1단계: 무엇이 보이는지 찾아보기
+  → "이 그림에서 뭐가 제일 먼저 눈에 들어와?", "어떤 색이 많이 보여?" 같은 질문.
+  → 색깔, 사람, 동물, 물건, 배경 등 보이는 걸 자유롭게 말하게 해.
+  → 학생이 뭘 하나라도 말하면 "오, 잘 봤다!" 하고 맞장구.
 
-3단계 해석(解釋) - "무엇을 말하고 싶나요?"
-  → 작가의 감정, 의도, 메시지를 학생 스스로 추측하게 해.
-  → "이 그림을 그릴 때 작가는 어떤 기분이었을 것 같아?", "이 작품이 무엇을 전달하려는 것 같아?" 같은 질문.
+2단계: 어떻게 그렸는지 살펴보기
+  → "이 부분은 왜 이렇게 밝은(어두운) 것 같아?", "선이 어떤 느낌이야?" 같은 질문.
+  → 색 사용, 밝기, 붓 터치, 구도(화면 배치) 등을 탐색하게 해.
+  → 어려운 용어 대신 "밝다/어둡다, 부드럽다/거칠다, 가운데/가장자리" 같은 쉬운 말 사용.
 
-4단계 판단(判斷) - "이 작품을 어떻게 생각하나요?"
-  → 근거를 들어 자신의 의견을 표현하게 해.
-  → "이 작품의 어떤 점이 인상적이었어? 왜?", "만약 제목을 다시 붙인다면?" 같은 질문.
+3단계: 작가의 마음 상상해보기
+  → "이 그림을 그릴 때 작가 기분이 어땠을 것 같아?", "이 그림이 무슨 이야기를 하고 있는 것 같아?" 같은 질문.
+  → 학생의 상상이 엉뚱해도 OK! "재밌는 생각이다!" 하고 이유를 물어봐.
 
-=== 비계 설정(Scaffolding) 원칙 ===
-- 학생이 막히거나 짧게 답하면: 더 쉬운 힌트 질문으로 낮은 단계에서 다시 시도하게 해.
-- 학생이 잘 답하면: 그 답을 인정한 뒤 다음 단계로 자연스럽게 이끌어.
-- "틀렸어"라고 절대 말하지 마. "그렇구나! 그럼 이 부분은 어떻게 보여?" 처럼 이어가.
-- 한 번에 질문을 1가지만 해. 여러 질문을 동시에 던지지 마.
-- 학생 답변을 그대로 반영해서 "네가 말한 것처럼~" 으로 시작하면 더 좋아.
+4단계: 나만의 생각 말하기
+  → "이 그림에서 제일 마음에 드는 부분은? 왜?", "이 그림 제목을 네가 다시 지어본다면?" 같은 질문.
+  → 학생이 "좋다/싫다"만 말하면 "어떤 점이?" 하고 이유를 부드럽게 물어봐.
+
+=== 대화 원칙 ===
+- 한 번에 질문은 딱 1개만. 여러 개 동시에 던지지 마.
+- 서두르지 마. 학생이 한 단계에서 충분히 이야기하고 싶어 하면 거기서 더 머물러도 돼.
+- 학생이 막히면: "힌트를 줄까?" 하고, 더 쉬운 질문으로 내려가.
+- 학생이 잘 답하면: 그 말을 인정("오! 그렇구나~")한 뒤 자연스럽게 다음 흐름으로.
+- "틀렸어"는 절대 금지. "그렇게 볼 수도 있겠다! 그러면 이건 어때?" 식으로.
+- "네가 말한 것처럼~"으로 학생 답변을 반영하면 학생이 자신감을 가져.
+- 학생이 한 말에 대해 이 작품과 관련된 배경 지식으로 맞장구를 칠 수 있어. 단, 지식을 일방적으로 전달하지 마.
+- 대화가 즐거운 수다처럼 흘러가게 해. 학생이 "더 하고 싶다"고 느끼면 성공이야.
 
 === 질문 난이도: ${assignment.difficultyLabel || '중급'} ===
-${assignment.difficultyPrompt || '기본적인 미술 용어를 사용하며 스스로 생각하도록 유도해.'}
+${assignment.difficultyPrompt || '쉬운 말로 질문하되 스스로 생각하도록 유도해.'}
 
-=== 점수 체계 ===
-- 사용할 수 있는 점수는 ${formatScoreOptions(scoreOptions)}점뿐이야. 반드시 이 중 하나만 사용해.
-- 평가 기준:
-  · 관찰의 구체성: 얼마나 세밀하게 작품을 봤나
-  · 표현의 자발성: 자기만의 언어로 표현했나  
-  · 단계 도달 깊이: 설정된 감상 단계까지 도달했나
-  · 근거의 유무: 의견에 근거가 있나 (판단 단계 해당)
-- 최고점 ${maxScore}점: 목표 감상 단계에 충분히 도달하고, 자신만의 구체적 관찰과 해석을 표현한 경우.
-- 엉뚱하거나 무관한 답, 의미 없는 반복: 반드시 ${lowestScore}점.
+=== 채점 기준: 감상의 깊이 ===
+- 사용할 수 있는 점수는 ${formatScoreOptions(scoreOptions)}점뿐이야.
+- **정확한 미술 지식이 아니라 "감상이 얼마나 깊었느냐"로 점수를 줘.**
+- 감상의 깊이란:
+  · 작품을 구체적으로 관찰했는가 (예: 색깔, 형태, 인물 등을 구체적으로 언급)
+  · 표현 방법을 인식했는가 (예: 밝고 어두운 부분, 선의 느낌 등)
+  · 자기 나름의 의미를 찾으려 했는가 (예: 작가의 마음, 그림의 이야기)
+  · 자신의 생각을 근거와 함께 표현했는가 (예: "~해서 ~같아")
+- 점수와 도달 단계를 연동해:
+  · 1단계(관찰)까지만 도달: 낮은 점수 범위
+  · 2단계(분석)까지 도달: 중하 점수 범위
+  · 3단계(해석)까지 도달: 중상 점수 범위
+  · 4단계(판단)까지 도달 + 깊이 있는 감상: 최고점 ${maxScore}점
+- 같은 단계라도 더 구체적이고 자기만의 표현이 있으면 높은 점수를 줘.
+- 틀린 해석이라도 진지하게 자기 생각을 말했으면 그 깊이를 인정해.
+- 최저 ${lowestScore}점: 장난, 엉뚱한 답, 무관한 말, "몰라" 반복.
 
 === 마무리 형식 ===
-대화를 마무리할 때는 학생의 감상을 따뜻하게 정리해 준 뒤, 마지막 줄에 아래 형식을 정확히 넣어.
+대화를 마무리할 때는 학생이 오늘 감상에서 발견한 것들을 따뜻하게 요약해 줘.
+마지막 줄들에 아래 태그를 정확히 넣어.
+
 [SCORE:X]
-[FEEDBACK:이 점수를 준 이유를 감상 단계 기준으로 1~2문장 설명]
-[HIGHER_SCORE_TIP:더 높은 점수를 받으려면 어떤 관찰이나 해석을 더 말했어야 했는지 구체적으로. 이미 최고점이면 '이미 최고 점수야.']
+[REACHED_STAGE:도달한 가장 높은 단계 번호(1~4)]
+[FEEDBACK:감상의 깊이를 기준으로 이 점수를 준 이유 1~2문장]
+[NEXT_STEP_TIP:다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도를 구체적으로 제안. 최고점이면 '정말 깊이 있는 감상이었어!']
 
 === 중요 ===
-- 학생 발화 기회는 최대 ${MAX_STUDENT_TURNS}번이야.
-- ${MAX_STUDENT_TURNS}번째 답변 뒤에는 반드시 마무리해야 해.
+- 학생 발화 기회는 최대 ${maxTurns}번이야.
+- ${maxTurns}번째 답변 뒤에는 반드시 마무리해야 해.
 - 학생이 "몰라요"처럼 짧게 답해도 지금까지 한 말을 바탕으로 평가하고 마무리해.
-- ${shouldForceFinish ? '이번은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : allowFinish ? '학생이 충분한 감상을 표현했거나 턴이 거의 다 찼다면 마무리해.' : '[SCORE], [FEEDBACK], [HIGHER_SCORE_TIP] 태그를 절대 사용하지 말고, 아직 탐색하지 않은 감상 요소를 한 가지만 더 질문해.'}`;
+- ${shouldForceFinish ? '이번은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : allowFinish ? '학생이 충분히 감상했거나 턴이 거의 다 찼다면 자연스럽게 마무리해.' : '[SCORE], [REACHED_STAGE], [FEEDBACK], [NEXT_STEP_TIP] 태그를 절대 사용하지 말고, 대화를 자연스럽게 이어가.'}`;
 }
 
 function extractTaggedValue(text, tagName) {
@@ -187,8 +209,10 @@ function extractTaggedValue(text, tagName) {
 function stripCompletionTags(text) {
   return text
     .replace(/\[SCORE:.*?\]/s, '')
+    .replace(/\[REACHED_STAGE:.*?\]/s, '')
     .replace(/\[FEEDBACK:.*?\]/s, '')
     .replace(/\[HIGHER_SCORE_TIP:.*?\]/s, '')
+    .replace(/\[NEXT_STEP_TIP:.*?\]/s, '')
     .trim();
 }
 
@@ -210,11 +234,16 @@ function extractCompletionData(content, assignment) {
   const parsedScore = Number.parseInt(scoreMatch[1], 10);
   const score = getClosestAllowedScore(scoreOptions, parsedScore) ?? getLowestAllowedScore(scoreOptions);
 
+  const reachedStageRaw = extractTaggedValue(replyText, 'REACHED_STAGE');
+  const reachedStage = reachedStageRaw ? Number.parseInt(reachedStageRaw, 10) || null : null;
+
   return {
     finished: true,
     score,
+    reachedStage,
     feedback: extractTaggedValue(replyText, 'FEEDBACK'),
     higherScoreTip: extractTaggedValue(replyText, 'HIGHER_SCORE_TIP'),
+    nextStepTip: extractTaggedValue(replyText, 'NEXT_STEP_TIP'),
     reply: stripCompletionTags(replyText),
   };
 }
@@ -231,24 +260,30 @@ async function createChatReply(messages, options = {}) {
 }
 
 async function createForcedFinalReply(assignment, conversationMessages) {
+  const isArt = assignment.type === 'art';
+  const buildPrompt = isArt ? buildArtSystemPrompt : buildSystemPrompt;
+  const reachedStageTag = isArt ? '\n[REACHED_STAGE:도달한 가장 높은 단계 번호(1~4)]' : '';
+  const tipTag = isArt ? 'NEXT_STEP_TIP' : 'HIGHER_SCORE_TIP';
+  const tipDesc = isArt ? '다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도' : '더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지';
+
   const attempts = [
     {
       temperature: 0.3,
       maxTokens: 420,
-      systemPrompt: buildSystemPrompt(assignment, { shouldForceFinish: true }),
+      systemPrompt: buildPrompt(assignment, { shouldForceFinish: true }),
     },
     {
       temperature: 0,
       maxTokens: 420,
-      systemPrompt: `${buildSystemPrompt(assignment, { shouldForceFinish: true })}
+      systemPrompt: `${buildPrompt(assignment, { shouldForceFinish: true })}
 
 === 출력 형식 재강조 ===
 - 이번 응답은 마지막 응답이야.
 - 추가 질문은 하지 마.
-- 2~4문장으로 짧게 마무리한 뒤 아래 3줄을 반드시 포함해.
-[SCORE:X]
+- 2~4문장으로 짧게 마무리한 뒤 아래 태그를 반드시 포함해.
+[SCORE:X]${reachedStageTag}
 [FEEDBACK:현재 점수를 준 이유]
-[HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지]`,
+[${tipTag}:${tipDesc}]`,
     },
   ];
 
@@ -345,10 +380,12 @@ export async function POST(request) {
     const existingMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
     const studentTurnCount =
       existingMessages.filter((message) => message.role === 'student').length + 1;
+    const isArt = assignment.type === 'art';
+    const effectiveMaxTurns = isArt ? ART_MAX_STUDENT_TURNS : MAX_STUDENT_TURNS;
     const minTurns = Number.isInteger(assignment.minTurns) && assignment.minTurns >= 1
       ? assignment.minTurns
-      : 2;
-    const shouldForceFinish = studentTurnCount >= MAX_STUDENT_TURNS;
+      : (isArt ? 3 : 2);
+    const shouldForceFinish = studentTurnCount >= effectiveMaxTurns;
     const allowFinish = studentTurnCount >= minTurns;
 
     const conversationMessages = [
@@ -396,7 +433,7 @@ export async function POST(request) {
       parsedReply = buildFallbackCompletion(assignment, parsedReply.reply);
     }
 
-    const { reply, finished, score, feedback, higherScoreTip } = parsedReply;
+    const { reply, finished, score, feedback, higherScoreTip, nextStepTip, reachedStage } = parsedReply;
 
     const updatedMessages = [
       ...existingMessages,
@@ -410,10 +447,15 @@ export async function POST(request) {
       updateData.score = score;
       updateData.feedback = feedback;
       updateData.higherScoreTip = higherScoreTip;
+      updateData.nextStepTip = nextStepTip;
       updateData.status = 'completed';
       updateData.approved = false;
       updateData.completedAt = FieldValue.serverTimestamp();
       updateData.sessionTokenHash = null;
+
+      if (isArt && reachedStage) {
+        updateData.reachedStage = reachedStage;
+      }
     }
 
     await conversationRef.update(updateData);
@@ -425,6 +467,8 @@ export async function POST(request) {
       score,
       feedback,
       higherScoreTip,
+      nextStepTip,
+      ...(isArt && reachedStage ? { reachedStage } : {}),
     });
 
     if (finished) {

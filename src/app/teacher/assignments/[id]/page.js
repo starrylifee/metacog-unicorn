@@ -36,6 +36,18 @@ function formatConversationScore(score) {
   return Number.isFinite(score) ? `${score}점` : '-';
 }
 
+const STAGE_BADGES = [
+  { stage: 1, emoji: '👀', label: '탐험가' },
+  { stage: 2, emoji: '🔍', label: '분석가' },
+  { stage: 3, emoji: '💭', label: '상상가' },
+  { stage: 4, emoji: '⚖️', label: '평론가' },
+];
+
+function formatReachedStage(reachedStage) {
+  if (!reachedStage || reachedStage < 1 || reachedStage > 4) return null;
+  return STAGE_BADGES.filter((b) => b.stage <= reachedStage);
+}
+
 export default function AssignmentDetail() {
   const router = useRouter();
   const params = useParams();
@@ -48,6 +60,8 @@ export default function AssignmentDetail() {
   const [loadError, setLoadError] = useState('');
   const [selectedConv, setSelectedConv] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const scoreOptions = useMemo(
     () => (assignment ? getAssignmentScoreOptions(assignment) : []),
@@ -517,6 +531,124 @@ export default function AssignmentDetail() {
           </div>
         </div>
 
+        {/* 기간별 데이터 다운로드 */}
+        {conversations.length > 0 && (
+          <div className="card-glass" style={{ marginBottom: '2rem' }}>
+            <h3 style={{ marginBottom: '1rem', fontSize: '1rem', color: 'var(--purple-light)' }}>
+              📂 데이터 다운로드
+            </h3>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.85rem' }}>시작일</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  style={{ maxWidth: '180px' }}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.85rem' }}>종료일</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  style={{ maxWidth: '180px' }}
+                />
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  const fromDate = dateFrom ? new Date(dateFrom) : null;
+                  const toDate = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+
+                  const filtered = conversations.filter((conv) => {
+                    const startedAt = conv.startedAt
+                      ? (conv.startedAt.toDate ? conv.startedAt.toDate() : new Date(conv.startedAt))
+                      : null;
+                    if (!startedAt) return !fromDate && !toDate;
+                    if (fromDate && startedAt < fromDate) return false;
+                    if (toDate && startedAt > toDate) return false;
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    alert('해당 기간에 데이터가 없습니다.');
+                    return;
+                  }
+
+                  const escapeCSV = (value) => {
+                    const str = String(value ?? '');
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                      return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                  };
+
+                  const isArt = assignment.type === 'art';
+                  const headers = [
+                    '학생번호', '상태', '점수',
+                    ...(isArt ? ['도달단계'] : []),
+                    '피드백', '다음단계팁',
+                    '시작시간', '완료시간', '대화내용',
+                  ];
+
+                  const rows = filtered.map((conv) => {
+                    const startedAt = conv.startedAt
+                      ? (conv.startedAt.toDate ? conv.startedAt.toDate() : new Date(conv.startedAt))
+                      : null;
+                    const completedAt = conv.completedAt
+                      ? (conv.completedAt.toDate ? conv.completedAt.toDate() : new Date(conv.completedAt))
+                      : null;
+
+                    const chatLog = (conv.messages || [])
+                      .map((m) => `[${m.role === 'unicorn' ? '유니콘' : '학생'}] ${m.content}`)
+                      .join('\n');
+
+                    return [
+                      conv.studentCode,
+                      conv.status === 'completed' ? '완료' : '진행중',
+                      conv.score ?? '',
+                      ...(isArt ? [conv.reachedStage ?? ''] : []),
+                      conv.feedback ?? '',
+                      conv.nextStepTip || conv.higherScoreTip || '',
+                      startedAt ? startedAt.toLocaleString('ko-KR') : '',
+                      completedAt ? completedAt.toLocaleString('ko-KR') : '',
+                      chatLog,
+                    ].map(escapeCSV).join(',');
+                  });
+
+                  const bom = '\uFEFF';
+                  const csvContent = bom + headers.join(',') + '\n' + rows.join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  const dateLabel = [dateFrom, dateTo].filter(Boolean).join('~') || 'all';
+                  link.href = url;
+                  link.download = `${assignment.title}_${dateLabel}.csv`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                📅 CSV 다운로드 {dateFrom || dateTo ? `(${conversations.filter((conv) => {
+                  const startedAt = conv.startedAt
+                    ? (conv.startedAt.toDate ? conv.startedAt.toDate() : new Date(conv.startedAt))
+                    : null;
+                  if (!startedAt) return !dateFrom && !dateTo;
+                  if (dateFrom && startedAt < new Date(dateFrom)) return false;
+                  if (dateTo && startedAt > new Date(dateTo + 'T23:59:59')) return false;
+                  return true;
+                }).length}건)` : `(전체 ${conversations.length}건)`}
+              </button>
+            </div>
+            <p className="form-hint">
+              비워두면 전체 기간을 다운로드합니다. 학생별 대화 내용, 점수, 피드백이 모두 포함됩니다.
+            </p>
+          </div>
+        )}
+
         <h2 className="heading-section">학생 결과</h2>
 
         {conversations.length === 0 ? (
@@ -536,6 +668,7 @@ export default function AssignmentDetail() {
                     <th>번호</th>
                     <th>상태</th>
                     <th>점수</th>
+                    {assignment.type === 'art' && <th>감상 배지</th>}
                     <th>시작 시간</th>
                     <th>관리</th>
                   </tr>
@@ -554,6 +687,17 @@ export default function AssignmentDetail() {
                           <span className={`badge ${status.className}`}>{status.text}</span>
                         </td>
                         <td>{formatConversationScore(conversation.score)}</td>
+                        {assignment.type === 'art' && (
+                          <td>
+                            {conversation.reachedStage ? (
+                              <span style={{ fontSize: '0.85rem' }}>
+                                {formatReachedStage(conversation.reachedStage)?.map((b) => (
+                                  <span key={b.stage} title={b.label} style={{ marginRight: '0.2rem' }}>{b.emoji}</span>
+                                ))}
+                              </span>
+                            ) : '-'}
+                          </td>
+                        )}
                         <td className="card-meta">{formatDate(conversation.startedAt)}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>

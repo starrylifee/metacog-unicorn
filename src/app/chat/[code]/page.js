@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
-import { formatScoreOptions, getAssignmentMaxScore, getNextHigherScore } from '@/lib/scoreConfig';
+import { getAssignmentMaxScore } from '@/lib/scoreConfig';
 
 function buildWelcomeMessage(assignment) {
   if (assignment?.type === 'art') {
@@ -41,23 +41,15 @@ export default function ChatPage() {
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState(null);
   const [feedback, setFeedback] = useState('');
-  const [higherScoreTip, setHigherScoreTip] = useState('');
+  const [nextStepTip, setNextStepTip] = useState('');
   const [blocked, setBlocked] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState('');
+  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [readyToChat, setReadyToChat] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const scoreScaleLabel = useMemo(
-    () => (assignment?.scoreOptions ? formatScoreOptions(assignment.scoreOptions, ' / ') : ''),
-    [assignment]
-  );
+  const isArt = assignment?.type === 'art';
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
-  const nextHigherScore = useMemo(() => {
-    if (!assignment || !Number.isFinite(score)) {
-      return null;
-    }
-
-    return getNextHigherScore(assignment.scoreOptions || [], score);
-  }, [assignment, score]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,9 +63,10 @@ export default function ChatPage() {
       setFinished(false);
       setScore(null);
       setFeedback('');
-      setHigherScoreTip('');
+      setNextStepTip('');
       setMessages([]);
       setConversationId(null);
+      setReadyToChat(false);
 
       try {
         const response = await fetch(`/api/assignments/lookup?code=${code}`);
@@ -118,7 +111,15 @@ export default function ChatPage() {
             setFinished(true);
             setScore(restoredConversation.score ?? null);
             setFeedback(restoredConversation.feedback || '');
-            setHigherScoreTip(restoredConversation.higherScoreTip || '');
+            setNextStepTip(restoredConversation.nextStepTip || restoredConversation.higherScoreTip || '');
+          }
+
+          // 복원된 대화가 있으면 준비 화면 건너뛰기
+          if (restoredMessages.length > 0 || restoredConversation?.status === 'completed') {
+            setReadyToChat(true);
+          } else if (data.assignment.type !== 'art') {
+            // 수학 과제는 준비 화면 없이 바로 시작
+            setReadyToChat(true);
           }
         }
       } catch (error) {
@@ -164,7 +165,7 @@ export default function ChatPage() {
           setFinished(true);
           setScore(data.score);
           setFeedback(data.feedback || '');
-          setHigherScoreTip(data.higherScoreTip || '');
+          setNextStepTip(data.nextStepTip || data.higherScoreTip || '');
         }
       } else {
         setMessages([
@@ -238,6 +239,65 @@ export default function ChatPage() {
     );
   }
 
+  // 미술 과제: 감상 준비 화면
+  if (isArt && !readyToChat) {
+    return (
+      <div className="page-container">
+        <div className="entry-container">
+          <div className="unicorn-avatar unicorn-avatar-large">🎨</div>
+          <h1 className="heading-hero" style={{ fontSize: '1.8rem' }}>
+            <span className="heading-gradient">그림을 천천히 살펴보세요</span>
+          </h1>
+          <p className="subtitle" style={{ marginBottom: '1.5rem' }}>
+            잠시 그림을 자유롭게 감상한 뒤, 준비되면 대화를 시작하세요.
+          </p>
+
+          {assignment.imageUrl && (
+            <div style={{
+              marginBottom: '1.5rem',
+              borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden',
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid var(--border-color)',
+              maxWidth: '560px',
+              width: '100%',
+            }}>
+              <img
+                src={assignment.imageUrl}
+                alt={assignment.paintingTitle || assignment.title}
+                style={{
+                  width: '100%',
+                  maxHeight: '420px',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+              <p style={{
+                fontSize: '0.9rem',
+                color: 'var(--text-secondary)',
+                padding: '0.75rem 1rem',
+                fontWeight: 500,
+              }}>
+                {assignment.paintingTitle || assignment.title}
+                {assignment.artist ? ` · ${assignment.artist}` : ''}
+                {assignment.year ? ` (${assignment.year})` : ''}
+              </p>
+            </div>
+          )}
+
+          <button
+            className="btn btn-primary btn-large"
+            onClick={() => setReadyToChat(true)}
+            style={{ width: '100%', maxWidth: '320px' }}
+          >
+            🦄 감상 시작하기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-container">
       <div className="chat-container">
@@ -249,33 +309,76 @@ export default function ChatPage() {
               {assignment.title} · {studentCode}번 학생
             </p>
           </div>
-          {Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
+          {/* 미술: 점수 헤더에 안 보임, 수학: 기존대로 표시 */}
+          {!isArt && Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
+          {/* 미술: 그림 보기 버튼 */}
+          {isArt && assignment.imageUrl && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowImagePanel(!showImagePanel)}
+              style={{ marginLeft: 'auto' }}
+            >
+              {showImagePanel ? '그림 닫기' : '🖼️ 그림 보기'}
+            </button>
+          )}
         </div>
 
+        {/* 미술: 접이식 이미지 패널 (헤더 바로 아래 고정) */}
+        {isArt && assignment.imageUrl && showImagePanel && (
+          <div style={{
+            borderBottom: '1px solid var(--border-color)',
+            background: 'rgba(0,0,0,0.25)',
+            textAlign: 'center',
+            padding: '0.75rem',
+            flexShrink: 0,
+          }}>
+            <img
+              src={assignment.imageUrl}
+              alt={assignment.paintingTitle || assignment.title}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '220px',
+                objectFit: 'contain',
+                display: 'block',
+                margin: '0 auto',
+                borderRadius: 'var(--radius-sm)',
+              }}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+              {assignment.paintingTitle || assignment.title}
+              {assignment.artist ? ` · ${assignment.artist}` : ''}
+              {assignment.year ? ` (${assignment.year})` : ''}
+            </p>
+          </div>
+        )}
+
         <div className="chat-messages">
-          {assignment.type === 'art' && assignment.imageUrl && (
-            <div style={{ marginBottom: '1rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'rgba(0,0,0,0.25)', textAlign: 'center' }}>
+          {/* 미술: 초기 인라인 이미지 (대화 시작 시 한 번 보여줌) */}
+          {isArt && assignment.imageUrl && !showImagePanel && messages.length <= 1 && (
+            <div style={{ marginBottom: '0.5rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'rgba(0,0,0,0.25)', textAlign: 'center' }}>
               <img
                 src={assignment.imageUrl}
                 alt={assignment.paintingTitle || assignment.title}
-                style={{ maxWidth: '100%', maxHeight: '260px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+                style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.4rem 0.75rem' }}>
-                {assignment.paintingTitle || assignment.title}{assignment.artist ? ` · ${assignment.artist}` : ''}{assignment.year ? ` (${assignment.year})` : ''}
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.3rem 0.5rem' }}>
+                상단 "🖼️ 그림 보기" 버튼으로 언제든 다시 볼 수 있어요
               </p>
             </div>
           )}
+
           {messages.map((message, index) => (
             <div key={index} className={`chat-bubble chat-bubble-${message.role}`}>
-              {message.role === 'unicorn' && <div className="chat-sender">메타인지 유니콘</div>}
+              {message.role === 'unicorn' && <div className="chat-sender">{isArt ? '미술 유니콘' : '메타인지 유니콘'}</div>}
               <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
             </div>
           ))}
 
           {sending && (
             <div className="chat-bubble chat-bubble-unicorn">
-              <div className="chat-sender">메타인지 유니콘</div>
+              <div className="chat-sender">{isArt ? '미술 유니콘' : '메타인지 유니콘'}</div>
               <div className="typing-dots">
                 <span />
                 <span />
@@ -284,20 +387,32 @@ export default function ChatPage() {
             </div>
           )}
 
-          {finished && Number.isFinite(score) && (
+          {/* 완료 카드: 미술은 점수 숨김, 수학은 기존대로 */}
+          {finished && (
             <div className="chat-bubble chat-bubble-system">
               <div className="score-display">
-                <div className="score-label">{score}점{Number.isFinite(maxScore) ? ` / ${maxScore}점` : ''}</div>
-                {scoreScaleLabel && (
-                  <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    점수 단계: {scoreScaleLabel}
-                  </p>
-                )}
-                {feedback && <div className="score-feedback">{feedback}</div>}
-                {nextHigherScore !== null && higherScoreTip && (
-                  <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
-                    <strong>{nextHigherScore}점을 받으려면</strong> {higherScoreTip}
-                  </div>
+                {isArt ? (
+                  <>
+                    <div className="score-label">🎨 오늘의 감상 완료!</div>
+                    {feedback && <div className="score-feedback">{feedback}</div>}
+                    {nextStepTip && (
+                      <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
+                        <strong>💡 다음에 해보면 좋을 것</strong> {nextStepTip}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {Number.isFinite(score) && (
+                      <div className="score-label">{score}점{Number.isFinite(maxScore) ? ` / ${maxScore}점` : ''}</div>
+                    )}
+                    {feedback && <div className="score-feedback">{feedback}</div>}
+                    {nextStepTip && (
+                      <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
+                        <strong>💡 다음에 해보면 좋을 것</strong> {nextStepTip}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div style={{ marginTop: '1rem' }}>
                   <Link href="/" className="btn btn-primary btn-sm">
@@ -317,7 +432,7 @@ export default function ChatPage() {
               id="chat-input"
               type="text"
               className="form-input"
-              placeholder="유니콘에게 설명해 보세요..."
+              placeholder={isArt ? '그림을 보고 느낀 점을 자유롭게 말해 보세요...' : '유니콘에게 설명해 보세요...'}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}

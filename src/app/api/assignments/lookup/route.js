@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { getAssignmentMaxScore, getAssignmentScoreOptions } from '@/lib/scoreConfig';
 import { adminDb } from '@/lib/serverDb';
@@ -37,6 +37,11 @@ export async function GET(request) {
         entryCode: assignment.entryCode,
         scoreOptions,
         maxScore: getAssignmentMaxScore(assignment),
+        type: assignment.type || 'math',
+        imageUrl: assignment.imageUrl || null,
+        paintingTitle: assignment.paintingTitle || null,
+        artist: assignment.artist || null,
+        year: assignment.year || null,
       },
     });
   } catch (error) {

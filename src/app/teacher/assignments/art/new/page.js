@@ -18,28 +18,28 @@ import {
 const APPRECIATION_LEVELS = [
   {
     value: 1,
-    label: '1단계 · 기술',
+    label: '1단계 · 탐험가(기술)',
     emoji: '👀',
     desc: '작품에서 보이는 것을 구체적으로 말하게 한다',
     prompt: '기술(記述) 단계까지만 안내해. 학생이 작품에서 보이는 것(색, 형태, 인물, 배경 등)을 말로 표현하는 것을 돕는다.',
   },
   {
     value: 2,
-    label: '2단계 · 분석',
+    label: '2단계 · 분석가(분석)',
     emoji: '🔍',
     desc: '기술 + 색·구도·선·명암 등 표현 방법 분석',
     prompt: '기술(記述)과 분석(分析) 단계까지 안내해. 먼저 보이는 것을 말하게 한 뒤, 색감·구도·선·명암·질감 등 표현 기법을 생각하게 한다.',
   },
   {
     value: 3,
-    label: '3단계 · 해석',
+    label: '3단계 · 상상가(해석)',
     emoji: '💭',
     desc: '기술 + 분석 + 작가 의도·감정·메시지 해석',
     prompt: '기술(記述), 분석(分析), 해석(解釋) 단계까지 안내해. 보이는 것과 표현 기법을 거쳐, 작가의 의도나 감정, 작품이 전달하려는 메시지를 학생 스스로 추측하게 한다.',
   },
   {
     value: 4,
-    label: '4단계 · 판단',
+    label: '4단계 · 평론가(판단)',
     emoji: '⚖️',
     desc: '모든 단계 + 근거를 들어 자신의 의견 표현',
     prompt: '기술(記述), 분석(分析), 해석(解釋), 판단(判斷) 네 단계를 모두 안내해. 마지막으로 학생이 이 작품에 대한 자신의 생각을 근거와 함께 표현하게 한다.',
@@ -87,7 +87,7 @@ export default function NewArtAssignment() {
     difficultyLevel: 'intermediate',
     title: '',
     scoreOptionsInput: formatScoreOptions(DEFAULT_SCORE_OPTIONS),
-    minTurns: 2,
+    minTurns: 5,
   });
 
   useEffect(() => {
@@ -413,9 +413,13 @@ export default function NewArtAssignment() {
             </p>
             <div style={{ display: 'grid', gap: '0.75rem' }}>
               {[
-                { value: 1, label: '1회', desc: '학생이 한 번 답하면 바로 채점 가능' },
-                { value: 2, label: '2회 (권장)', desc: '답변 확인 후 한 번 더 보충할 기회 제공' },
-                { value: 3, label: '3회', desc: '충분한 대화 후 채점 (3회가 최대)' },
+                { value: 2, label: '2회', desc: '간단한 감상 대화' },
+                { value: 3, label: '3회', desc: '기본적인 감상 흐름을 거칠 수 있는 횟수' },
+                { value: 4, label: '4회', desc: '각 단계에서 조금 더 여유 있게' },
+                { value: 5, label: '5회 (권장)', desc: '자연스럽게 감상을 즐길 수 있는 횟수' },
+                { value: 6, label: '6회', desc: '관심 가는 단계에서 더 깊이 대화' },
+                { value: 7, label: '7회', desc: '충분히 여유로운 감상 대화' },
+                { value: 8, label: '8회 (최대)', desc: '모든 단계를 천천히, 충분히 탐색' },
               ].map((option) => {
                 const isSelected = form.minTurns === option.value;
                 return (
