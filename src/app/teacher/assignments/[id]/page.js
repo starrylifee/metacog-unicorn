@@ -757,7 +757,7 @@ export default function AssignmentDetail() {
                       className={`chat-bubble chat-bubble-${message.role}`}
                       style={{ maxWidth: '85%' }}
                     >
-                      {message.role === 'unicorn' && <div className="chat-sender">메타인지 유니콘</div>}
+                      {message.role === 'unicorn' && <div className="chat-sender">{assignment.type === 'art' ? '미술 유니콘' : '메타인지 유니콘'}</div>}
                       <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
                     </div>
                   ))}
@@ -765,13 +765,13 @@ export default function AssignmentDetail() {
 
                 {selectedConv.feedback && (
                   <div className="score-feedback" style={{ marginTop: '1rem' }}>
-                    <strong>AI 피드백</strong> {selectedConv.feedback}
+                    <strong>AI 피드백 ({selectedConv.score}점{Number.isFinite(maxScore) ? `/${maxScore}점` : ''})</strong> {selectedConv.feedback}
                   </div>
                 )}
 
-                {selectedNextHigherScore !== null && selectedConv.higherScoreTip && (
+                {(selectedConv.nextStepTip || selectedConv.higherScoreTip) && (
                   <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
-                    <strong>{selectedNextHigherScore}점을 받으려면</strong> {selectedConv.higherScoreTip}
+                    <strong>💡 다음 감상 팁</strong> {selectedConv.nextStepTip || selectedConv.higherScoreTip}
                   </div>
                 )}
 

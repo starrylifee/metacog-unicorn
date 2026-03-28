@@ -309,62 +309,51 @@ export default function ChatPage() {
               {assignment.title} · {studentCode}번 학생
             </p>
           </div>
-          {/* 미술: 점수 헤더에 안 보임, 수학: 기존대로 표시 */}
           {!isArt && Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
-          {/* 미술: 그림 보기 버튼 */}
-          {isArt && assignment.imageUrl && (
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setShowImagePanel(!showImagePanel)}
-              style={{ marginLeft: 'auto' }}
-            >
-              {showImagePanel ? '그림 닫기' : '🖼️ 그림 보기'}
-            </button>
-          )}
         </div>
 
-        {/* 미술: 접이식 이미지 패널 (헤더 바로 아래 고정) */}
-        {isArt && assignment.imageUrl && showImagePanel && (
-          <div style={{
-            borderBottom: '1px solid var(--border-color)',
-            background: 'rgba(0,0,0,0.25)',
-            textAlign: 'center',
-            padding: '0.75rem',
-            flexShrink: 0,
-          }}>
-            <img
-              src={assignment.imageUrl}
-              alt={assignment.paintingTitle || assignment.title}
-              style={{
-                maxWidth: '100%',
-                maxHeight: '220px',
-                objectFit: 'contain',
-                display: 'block',
-                margin: '0 auto',
-                borderRadius: 'var(--radius-sm)',
-              }}
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-              {assignment.paintingTitle || assignment.title}
-              {assignment.artist ? ` · ${assignment.artist}` : ''}
-              {assignment.year ? ` (${assignment.year})` : ''}
-            </p>
-          </div>
-        )}
-
         <div className="chat-messages">
-          {/* 미술: 초기 인라인 이미지 (대화 시작 시 한 번 보여줌) */}
-          {isArt && assignment.imageUrl && !showImagePanel && messages.length <= 1 && (
-            <div style={{ marginBottom: '0.5rem', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'rgba(0,0,0,0.25)', textAlign: 'center' }}>
+          {/* 미술: 스티키 썸네일 — 스크롤해도 항상 상단에 고정 */}
+          {isArt && assignment.imageUrl && (
+            <div
+              onClick={() => setShowImagePanel(!showImagePanel)}
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 10,
+                cursor: 'pointer',
+                borderRadius: showImagePanel ? 'var(--radius-md)' : 'var(--radius-sm)',
+                overflow: 'hidden',
+                background: 'rgba(15, 10, 26, 0.92)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid var(--border-color)',
+                textAlign: 'center',
+                marginBottom: '0.75rem',
+                transition: 'all 0.3s ease',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              }}
+            >
               <img
                 src={assignment.imageUrl}
                 alt={assignment.paintingTitle || assignment.title}
-                style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                style={{
+                  width: '100%',
+                  maxHeight: showImagePanel ? '280px' : '72px',
+                  objectFit: showImagePanel ? 'contain' : 'cover',
+                  display: 'block',
+                  transition: 'max-height 0.3s ease',
+                }}
+                onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
               />
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.3rem 0.5rem' }}>
-                상단 "🖼️ 그림 보기" 버튼으로 언제든 다시 볼 수 있어요
+              <p style={{
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                padding: '0.2rem 0.5rem',
+                margin: 0,
+              }}>
+                {showImagePanel
+                  ? `${assignment.paintingTitle || assignment.title}${assignment.artist ? ` · ${assignment.artist}` : ''} — 탭하면 축소`
+                  : '🖼️ 탭하면 그림 확대'}
               </p>
             </div>
           )}
