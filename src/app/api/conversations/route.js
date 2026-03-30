@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import {
   CHAT_SESSION_COOKIE,
@@ -118,7 +118,17 @@ export async function POST(request) {
 
     return response;
   } catch (error) {
-    console.error('Create conversation error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    console.error('=== Create Conversation Error Details ===');
+    console.error('Error message:', error?.message || 'Unknown error');
+    console.error('Error name:', error?.name || 'Unknown');
+    console.error('Error stack:', error?.stack || 'No stack trace');
+    if (error?.code) {
+      console.error('Error code:', error.code);
+    }
+    console.error('=== End Create Conversation Error ===');
+    return NextResponse.json(
+      { success: false, error: `서버 오류: ${error?.message || '알 수 없는 오류'}` },
+      { status: 500 }
+    );
   }
 }

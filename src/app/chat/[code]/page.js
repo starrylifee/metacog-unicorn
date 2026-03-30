@@ -46,6 +46,7 @@ export default function ChatPage() {
   const [blockedMessage, setBlockedMessage] = useState('');
   const [showImagePanel, setShowImagePanel] = useState(false);
   const [readyToChat, setReadyToChat] = useState(false);
+  const [turnInfo, setTurnInfo] = useState({ current: 0, max: 0, remaining: 0 });
   const messagesEndRef = useRef(null);
 
   const isArt = assignment?.type === 'art';
@@ -114,6 +115,16 @@ export default function ChatPage() {
             setNextStepTip(restoredConversation.nextStepTip || restoredConversation.higherScoreTip || '');
           }
 
+          // 복원된 대화에서 턴 정보 계산
+          const restoredStudentTurns = restoredMessages.filter(m => m.role === 'student').length;
+          const artType = data.assignment.type === 'art';
+          const maxTurns = artType ? 10 : 3;
+          setTurnInfo({
+            current: restoredStudentTurns,
+            max: maxTurns,
+            remaining: Math.max(0, maxTurns - restoredStudentTurns),
+          });
+
           // 복원된 대화가 있으면 준비 화면 건너뛰기
           if (restoredMessages.length > 0 || restoredConversation?.status === 'completed') {
             setReadyToChat(true);
@@ -166,6 +177,15 @@ export default function ChatPage() {
           setScore(data.score);
           setFeedback(data.feedback || '');
           setNextStepTip(data.nextStepTip || data.higherScoreTip || '');
+        }
+
+        // 턴 정보 업데이트
+        if (data.maxTurns !== undefined) {
+          setTurnInfo({
+            current: data.currentTurn ?? 0,
+            max: data.maxTurns ?? 0,
+            remaining: data.remainingTurns ?? 0,
+          });
         }
       } else {
         setMessages([
@@ -309,6 +329,27 @@ export default function ChatPage() {
               {assignment.title} · {studentCode}번 학생
             </p>
           </div>
+          {!finished && turnInfo.max > 0 && (
+            <span
+              className="badge"
+              style={{
+                background: turnInfo.remaining <= 2
+                  ? 'rgba(255, 100, 100, 0.2)'
+                  : 'rgba(139, 92, 246, 0.2)',
+                color: turnInfo.remaining <= 2
+                  ? '#ff8a8a'
+                  : 'var(--primary)',
+                border: `1px solid ${turnInfo.remaining <= 2 ? 'rgba(255,100,100,0.3)' : 'rgba(139,92,246,0.3)'}`,
+                padding: '0.25rem 0.6rem',
+                borderRadius: '999px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {turnInfo.current}/{turnInfo.max}턴
+            </span>
+          )}
           {!isArt && Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
         </div>
 
@@ -417,6 +458,19 @@ export default function ChatPage() {
 
         {!finished && (
           <div className="chat-input-area">
+            {turnInfo.max > 0 && turnInfo.remaining <= 2 && turnInfo.remaining > 0 && (
+              <div style={{
+                fontSize: '0.72rem',
+                color: turnInfo.remaining === 1 ? '#ff8a8a' : 'var(--text-muted)',
+                textAlign: 'center',
+                paddingBottom: '0.35rem',
+                fontWeight: 500,
+              }}>
+                {turnInfo.remaining === 1
+                  ? '⚠️ 마지막 대화 기회예요!'
+                  : `💬 남은 대화 기회: ${turnInfo.remaining}번`}
+              </div>
+            )}
             <input
               id="chat-input"
               type="text"

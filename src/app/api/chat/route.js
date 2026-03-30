@@ -460,6 +460,8 @@ export async function POST(request) {
 
     await conversationRef.update(updateData);
 
+    const remainingTurns = Math.max(0, effectiveMaxTurns - studentTurnCount);
+
     const response = NextResponse.json({
       success: true,
       reply,
@@ -468,6 +470,9 @@ export async function POST(request) {
       feedback,
       higherScoreTip,
       nextStepTip,
+      remainingTurns,
+      maxTurns: effectiveMaxTurns,
+      currentTurn: studentTurnCount,
       ...(isArt && reachedStage ? { reachedStage } : {}),
     });
 
@@ -483,7 +488,27 @@ export async function POST(request) {
 
     return response;
   } catch (error) {
-    console.error('Chat API error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    console.error('=== Chat API Error Details ===');
+    console.error('Error message:', error?.message || 'Unknown error');
+    console.error('Error name:', error?.name || 'Unknown');
+    console.error('Error stack:', error?.stack || 'No stack trace');
+    if (error?.response) {
+      console.error('API Response status:', error.response.status);
+      console.error('API Response data:', JSON.stringify(error.response.data, null, 2));
+    }
+    if (error?.code) {
+      console.error('Error code:', error.code);
+    }
+    try {
+      const bodyText = await request.clone().text();
+      console.error('Request body:', bodyText);
+    } catch (_) {
+      console.error('Could not read request body');
+    }
+    console.error('=== End Chat API Error ===');
+    return NextResponse.json(
+      { success: false, error: `서버 오류: ${error?.message || '알 수 없는 오류'}` },
+      { status: 500 }
+    );
   }
 }
