@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { getAssignmentMaxScore, getAssignmentScoreOptions } from '@/lib/scoreConfig';
 import { adminDb } from '@/lib/serverDb';
 
@@ -26,6 +27,7 @@ export async function GET(request) {
     const doc = snapshot.docs[0];
     const assignment = doc.data();
     const scoreOptions = getAssignmentScoreOptions(assignment);
+    const chatConstraints = normalizeAssignmentConstraints(assignment);
 
     return NextResponse.json({
       success: true,
@@ -42,6 +44,10 @@ export async function GET(request) {
         paintingTitle: assignment.paintingTitle || null,
         artist: assignment.artist || null,
         year: assignment.year || null,
+        minTurns: chatConstraints.minTurns,
+        maxTurns: chatConstraints.maxTurns,
+        minStudentMessageBytes: chatConstraints.minStudentMessageBytes,
+        maxStudentMessageBytes: chatConstraints.maxStudentMessageBytes,
       },
     });
   } catch (error) {

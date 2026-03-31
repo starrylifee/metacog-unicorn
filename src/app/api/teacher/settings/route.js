@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getTeacherConstraintDefaults } from '@/lib/chatConstraints';
 import { FieldValue, adminDb, serializeData } from '@/lib/serverDb';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 
@@ -18,14 +19,38 @@ export async function GET(request) {
     }
 
     console.error('Teacher settings GET error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    return NextResponse.json({ success: false, error: '?쒕쾭 ?ㅻ쪟' }, { status: 500 });
   }
 }
 
 export async function POST(request) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
-    const { growndClassId = '', growndApiKey = '', email = '', displayName = '' } = await request.json();
+    const {
+      growndClassId = '',
+      growndApiKey = '',
+      email = '',
+      displayName = '',
+      defaultMathMinTurns = null,
+      defaultMathMaxTurns = null,
+      defaultArtMinTurns = null,
+      defaultArtMaxTurns = null,
+      defaultMinStudentMessageBytes = null,
+      defaultMaxStudentMessageBytes = null,
+    } = await request.json();
+
+    const mathDefaults = getTeacherConstraintDefaults({
+      defaultMathMinTurns,
+      defaultMathMaxTurns,
+      defaultMinStudentMessageBytes,
+      defaultMaxStudentMessageBytes,
+    }, 'math');
+    const artDefaults = getTeacherConstraintDefaults({
+      defaultArtMinTurns,
+      defaultArtMaxTurns,
+      defaultMinStudentMessageBytes,
+      defaultMaxStudentMessageBytes,
+    }, 'art');
 
     const ref = adminDb.collection('teachers').doc(teacher.uid);
     const snapshot = await ref.get();
@@ -35,6 +60,12 @@ export async function POST(request) {
       growndApiKey: growndApiKey.trim(),
       email: email || teacher.email || '',
       displayName: displayName || teacher.name || '',
+      defaultMathMinTurns: mathDefaults.minTurns,
+      defaultMathMaxTurns: mathDefaults.maxTurns,
+      defaultArtMinTurns: artDefaults.minTurns,
+      defaultArtMaxTurns: artDefaults.maxTurns,
+      defaultMinStudentMessageBytes: mathDefaults.minStudentMessageBytes,
+      defaultMaxStudentMessageBytes: mathDefaults.maxStudentMessageBytes,
       updatedAt: FieldValue.serverTimestamp(),
     };
 
@@ -54,6 +85,6 @@ export async function POST(request) {
     }
 
     console.error('Teacher settings POST error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    return NextResponse.json({ success: false, error: '?쒕쾭 ?ㅻ쪟' }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
+import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import {
   DEFAULT_SCORE_OPTIONS,
   DEFAULT_SCORING_STYLE,
@@ -35,7 +36,7 @@ async function generateUniqueEntryCode() {
     }
   }
 
-  throw new RequestError('입장 코드를 생성하지 못했습니다. 다시 시도해 주세요.', 503);
+  throw new RequestError('???怨멸텑 ?熬곣뫀????ｏ쭗???獄쏅똻???? 癲ル슢履뉑쾮?彛?????? ???怨뺣빰 ??筌먲퐣?????낆뒩??뗫빝??', 503);
 }
 
 export async function GET(request) {
@@ -57,7 +58,7 @@ export async function GET(request) {
     }
 
     console.error('Assignments GET error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    return NextResponse.json({ success: false, error: '??筌먦끉裕?????곸씔' }, { status: 500 });
   }
 }
 
@@ -76,8 +77,10 @@ export async function POST(request) {
       scoreOptions = DEFAULT_SCORE_OPTIONS,
       scoringStyle = DEFAULT_SCORING_STYLE,
       minTurns = 2,
-      // 미술 과제 전용 필드
-      type = 'math',
+      maxTurns = null,
+      minStudentMessageBytes = null,
+      maxStudentMessageBytes = null,
+            type = 'math',
       paintingTitle = '',
       artist = '',
       year = '',
@@ -91,19 +94,23 @@ export async function POST(request) {
       difficultyPrompt = '',
     } = body;
 
-    const normalizedMinTurns = Math.min(5, Math.max(1, Number.isInteger(Number(minTurns)) ? Number(minTurns) : 2));
+    const normalizedConstraints = normalizeAssignmentConstraints({
+      type,
+      minTurns,
+      maxTurns,
+      minStudentMessageBytes,
+      maxStudentMessageBytes,
+    });
 
     if (!title.trim()) {
       return NextResponse.json(
-        { success: false, error: '과제 제목은 필수입니다.' },
+        { success: false, error: '??貫?????筌먯룄肄?? ??ш끽維?????낇돲??' },
         { status: 400 }
       );
     }
-
-    // 수학 과제는 content 필수, 미술 과제는 paintingTitle + artist 필수
     if (type !== 'art' && !content.trim()) {
       return NextResponse.json(
-        { success: false, error: '학습 내용은 필수입니다.' },
+        { success: false, error: '????? ???⑤챶裕?? ??ш끽維?????낇돲??' },
         { status: 400 }
       );
     }
@@ -135,13 +142,16 @@ export async function POST(request) {
       scoreOptions: validatedScoreOptions.scoreOptions,
       maxScore: validatedScoreOptions.maxScore,
       scoringStyle: normalizeScoringStyle(scoringStyle),
-      minTurns: normalizedMinTurns,
+      minTurns: normalizedConstraints.minTurns,
+      maxTurns: normalizedConstraints.maxTurns,
+      minStudentMessageBytes: normalizedConstraints.minStudentMessageBytes,
+      maxStudentMessageBytes: normalizedConstraints.maxStudentMessageBytes,
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    // 미술 과제 전용 필드 추가
+    // 雅?퍔瑗띰㎖????貫?????ш끽維????ш끽維????⑤베堉?
     if (type === 'art') {
       assignmentData.paintingTitle = String(paintingTitle).trim();
       assignmentData.artist = String(artist).trim();
@@ -171,6 +181,6 @@ export async function POST(request) {
     }
 
     console.error('Assignments POST error:', error);
-    return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
+    return NextResponse.json({ success: false, error: '??筌먦끉裕?????곸씔' }, { status: 500 });
   }
 }

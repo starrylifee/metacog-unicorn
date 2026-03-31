@@ -5,10 +5,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { getChatLengthExamples, getTeacherConstraintDefaults } from '@/lib/chatConstraints';
 import { getTeacherSettings, saveTeacherSettings } from '@/lib/firestore';
 
 export default function TeacherSettings() {
   const router = useRouter();
+  const mathDefaults = getTeacherConstraintDefaults({}, 'math');
+  const artDefaults = getTeacherConstraintDefaults({}, 'art');
+  const lengthExamples = getChatLengthExamples();
   const [user, setUser] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -16,6 +20,12 @@ export default function TeacherSettings() {
   const [settings, setSettings] = useState({
     growndClassId: '',
     growndApiKey: '',
+    defaultMathMinTurns: mathDefaults.minTurns,
+    defaultMathMaxTurns: mathDefaults.maxTurns,
+    defaultArtMinTurns: artDefaults.minTurns,
+    defaultArtMaxTurns: artDefaults.maxTurns,
+    defaultMinStudentMessageBytes: mathDefaults.minStudentMessageBytes,
+    defaultMaxStudentMessageBytes: mathDefaults.maxStudentMessageBytes,
   });
 
   useEffect(() => {
@@ -31,6 +41,12 @@ export default function TeacherSettings() {
         setSettings({
           growndClassId: existing.growndClassId || '',
           growndApiKey: existing.growndApiKey || '',
+          defaultMathMinTurns: existing.defaultMathMinTurns ?? mathDefaults.minTurns,
+          defaultMathMaxTurns: existing.defaultMathMaxTurns ?? mathDefaults.maxTurns,
+          defaultArtMinTurns: existing.defaultArtMinTurns ?? artDefaults.minTurns,
+          defaultArtMaxTurns: existing.defaultArtMaxTurns ?? artDefaults.maxTurns,
+          defaultMinStudentMessageBytes: existing.defaultMinStudentMessageBytes ?? mathDefaults.minStudentMessageBytes,
+          defaultMaxStudentMessageBytes: existing.defaultMaxStudentMessageBytes ?? mathDefaults.maxStudentMessageBytes,
         });
       }
     });
@@ -46,6 +62,12 @@ export default function TeacherSettings() {
       await saveTeacherSettings(user.uid, {
         growndClassId: settings.growndClassId,
         growndApiKey: settings.growndApiKey,
+        defaultMathMinTurns: settings.defaultMathMinTurns,
+        defaultMathMaxTurns: settings.defaultMathMaxTurns,
+        defaultArtMinTurns: settings.defaultArtMinTurns,
+        defaultArtMaxTurns: settings.defaultArtMaxTurns,
+        defaultMinStudentMessageBytes: settings.defaultMinStudentMessageBytes,
+        defaultMaxStudentMessageBytes: settings.defaultMaxStudentMessageBytes,
         email: user.email,
         displayName: user.displayName,
       });
@@ -103,6 +125,148 @@ export default function TeacherSettings() {
                 onChange={(e) => setSettings(prev => ({ ...prev, growndApiKey: e.target.value }))}
               />
               <p className="form-hint">그라운드에서 발급받은 API 키를 입력하세요</p>
+            </div>
+
+            <div
+              style={{
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-color)',
+                background: 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+              <h4 style={{ marginBottom: '1rem', fontSize: '0.95rem', color: 'var(--purple-light)' }}>
+                새 과제 기본값
+              </h4>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">수학 최소/최대 턴</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max={settings.defaultMathMaxTurns}
+                      className="form-input"
+                      value={settings.defaultMathMinTurns}
+                      onChange={(e) => {
+                        const nextValue = Number(e.target.value || 1);
+                        setSettings((prev) => ({
+                          ...prev,
+                          defaultMathMinTurns: nextValue,
+                          defaultMathMaxTurns: Math.max(prev.defaultMathMaxTurns, nextValue),
+                        }));
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min={settings.defaultMathMinTurns}
+                      max="12"
+                      className="form-input"
+                      value={settings.defaultMathMaxTurns}
+                      onChange={(e) => {
+                        const nextValue = Number(e.target.value || settings.defaultMathMinTurns);
+                        setSettings((prev) => ({
+                          ...prev,
+                          defaultMathMaxTurns: Math.max(nextValue, prev.defaultMathMinTurns),
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">미술 최소/최대 턴</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max={settings.defaultArtMaxTurns}
+                      className="form-input"
+                      value={settings.defaultArtMinTurns}
+                      onChange={(e) => {
+                        const nextValue = Number(e.target.value || 1);
+                        setSettings((prev) => ({
+                          ...prev,
+                          defaultArtMinTurns: nextValue,
+                          defaultArtMaxTurns: Math.max(prev.defaultArtMaxTurns, nextValue),
+                        }));
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min={settings.defaultArtMinTurns}
+                      max="12"
+                      className="form-input"
+                      value={settings.defaultArtMaxTurns}
+                      onChange={(e) => {
+                        const nextValue = Number(e.target.value || settings.defaultArtMinTurns);
+                        setSettings((prev) => ({
+                          ...prev,
+                          defaultArtMaxTurns: Math.max(nextValue, prev.defaultArtMinTurns),
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">학생 답변 길이 기본값</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max={settings.defaultMaxStudentMessageBytes}
+                    className="form-input"
+                    value={settings.defaultMinStudentMessageBytes}
+                    onChange={(e) => {
+                      const nextValue = Number(e.target.value || 1);
+                      setSettings((prev) => ({
+                        ...prev,
+                        defaultMinStudentMessageBytes: nextValue,
+                        defaultMaxStudentMessageBytes: Math.max(prev.defaultMaxStudentMessageBytes, nextValue),
+                      }));
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={settings.defaultMinStudentMessageBytes}
+                    max="4000"
+                    className="form-input"
+                    value={settings.defaultMaxStudentMessageBytes}
+                    onChange={(e) => {
+                      const nextValue = Number(e.target.value || settings.defaultMinStudentMessageBytes);
+                      setSettings((prev) => ({
+                        ...prev,
+                        defaultMaxStudentMessageBytes: Math.max(nextValue, prev.defaultMinStudentMessageBytes),
+                      }));
+                    }}
+                  />
+                </div>
+                <p className="form-hint" style={{ marginTop: '0.75rem' }}>
+                  바이트 예시: {lengthExamples.map((example) => `${example.label} ${example.bytes}B`).join(' · ')}
+                </p>
+                <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  {lengthExamples.map((example) => (
+                    <div
+                      key={example.label}
+                      style={{
+                        padding: '0.75rem 0.9rem',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.88rem',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--text-primary)' }}>{example.label}</strong> · {example.bytes}B
+                      <div style={{ marginTop: '0.35rem' }}>{example.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <button

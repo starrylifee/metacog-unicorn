@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 
+import { formatStudentMessageByteRange, normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { auth, googleProvider } from '@/lib/firebase';
 import { getAssignmentsByTeacher, getTeacherSettings } from '@/lib/firestore';
 
@@ -232,13 +233,37 @@ export default function TeacherDashboard() {
           </div>
         ) : (
           <div className="grid-2">
-            {assignments.map((assignment) => (
+            {assignments.map((assignment) => {
+              const chatConstraints = normalizeAssignmentConstraints(assignment);
+
+              return (
               <Link
                 key={assignment.id}
                 href={`/teacher/assignments/${assignment.id}`}
                 style={{ textDecoration: 'none', color: 'inherit' }}
               >
                 <div className="card">
+                  <p
+                    style={{
+                      fontSize: '0.82rem',
+                      color: 'var(--text-muted)',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    최소 {chatConstraints.minTurns}턴 후 채점 · 최대 {chatConstraints.maxTurns}턴
+                  </p>
+                  <p
+                    style={{
+                      fontSize: '0.82rem',
+                      color: 'var(--text-muted)',
+                      marginBottom: '0.6rem',
+                    }}
+                  >
+                    학생 답변 {formatStudentMessageByteRange(
+                      chatConstraints.minStudentMessageBytes,
+                      chatConstraints.maxStudentMessageBytes
+                    )}
+                  </p>
                   <div
                     style={{
                       display: 'flex',
@@ -286,7 +311,8 @@ export default function TeacherDashboard() {
                   </div>
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

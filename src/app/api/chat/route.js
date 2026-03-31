@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 import { CHAT_SESSION_COOKIE, hashChatSessionToken } from '@/lib/chatSession';
+import { getUtf8ByteLength, normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import {
   formatScoreOptions,
   getAssignmentMaxScore,
@@ -18,8 +19,6 @@ const openai = new OpenAI({
 });
 
 const MODEL_NAME = 'gpt-4o-mini';
-const MAX_STUDENT_TURNS = 3;
-const ART_MAX_STUDENT_TURNS = 10;
 
 function getLowestAllowedScore(scoreOptions) {
   return Array.isArray(scoreOptions) && scoreOptions.length > 0 ? scoreOptions[0] : 0;
@@ -52,7 +51,7 @@ function buildScoringStyleGuidance(scoreOptions, scoringStyle) {
 }
 
 function buildSystemPrompt(assignment, options = {}) {
-  const { shouldForceFinish = false, allowFinish = true } = options;
+  const { shouldForceFinish = false, allowFinish = true, maxTurns = 3 } = options;
   const keywords = (assignment.keywords || []).join(', ');
   const scoreOptions = getAssignmentScoreOptions(assignment);
   const maxScore = getAssignmentMaxScore(assignment);
@@ -98,8 +97,8 @@ ${buildScoringStyleGuidance(scoreOptions, scoringStyle)}
 [HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말이나 이유나 예시를 더 말했어야 했는지 1~2문장으로 구체적으로 설명. 이미 최고점이면 '이미 최고 점수야.'라고 써.]
 
 === 중요 ===
-- 학생 발화 기회는 최대 ${MAX_STUDENT_TURNS}번이야.
-- ${MAX_STUDENT_TURNS}번째 학생 답변 뒤에는 반드시 마무리해야 해.
+- 학생 발화 기회는 최대 ${maxTurns}번이야.
+- ${maxTurns}번째 학생 답변 뒤에는 반드시 마무리해야 해.
 - HIGHER_SCORE_TIP에는 막연한 조언 말고, 학생이 실제로 어떤 내용을 더 말했어야 하는지 써.
 - HIGHER_SCORE_TIP도 오늘 수업 범위를 벗어나면 안 돼.
 - 학생이 "모르겠어"처럼 짧게 답해도 남은 내용으로 평가하고 마무리해.
@@ -107,11 +106,10 @@ ${buildScoringStyleGuidance(scoreOptions, scoringStyle)}
 }
 
 function buildArtSystemPrompt(assignment, options = {}) {
-  const { shouldForceFinish = false, allowFinish = true } = options;
+  const { shouldForceFinish = false, allowFinish = true, maxTurns = 5 } = options;
   const scoreOptions = getAssignmentScoreOptions(assignment);
   const maxScore = getAssignmentMaxScore(assignment);
   const lowestScore = getLowestAllowedScore(scoreOptions);
-  const maxTurns = ART_MAX_STUDENT_TURNS;
 
   const paintingInfo = [
     `작품명: ${assignment.paintingTitle || assignment.title}`,
@@ -262,6 +260,7 @@ async function createChatReply(messages, options = {}) {
 async function createForcedFinalReply(assignment, conversationMessages) {
   const isArt = assignment.type === 'art';
   const buildPrompt = isArt ? buildArtSystemPrompt : buildSystemPrompt;
+  const { maxTurns } = normalizeAssignmentConstraints(assignment);
   const reachedStageTag = isArt ? '\n[REACHED_STAGE:도달한 가장 높은 단계 번호(1~4)]' : '';
   const tipTag = isArt ? 'NEXT_STEP_TIP' : 'HIGHER_SCORE_TIP';
   const tipDesc = isArt ? '다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도' : '더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지';
@@ -270,12 +269,12 @@ async function createForcedFinalReply(assignment, conversationMessages) {
     {
       temperature: 0.3,
       maxTokens: 420,
-      systemPrompt: buildPrompt(assignment, { shouldForceFinish: true }),
+      systemPrompt: buildPrompt(assignment, { shouldForceFinish: true, maxTurns }),
     },
     {
       temperature: 0,
       maxTokens: 420,
-      systemPrompt: `${buildPrompt(assignment, { shouldForceFinish: true })}
+      systemPrompt: `${buildPrompt(assignment, { shouldForceFinish: true, maxTurns })}
 
 === 출력 형식 재강조 ===
 - 이번 응답은 마지막 응답이야.
@@ -387,10 +386,37 @@ export async function POST(request) {
     const studentTurnCount =
       existingMessages.filter((message) => message.role === 'student').length + 1;
     const isArt = assignment.type === 'art';
-    const effectiveMaxTurns = isArt ? ART_MAX_STUDENT_TURNS : MAX_STUDENT_TURNS;
-    const minTurns = Number.isInteger(assignment.minTurns) && assignment.minTurns >= 1
-      ? assignment.minTurns
-      : (isArt ? 3 : 2);
+    const chatConstraints = normalizeAssignmentConstraints(assignment);
+    const effectiveMaxTurns = chatConstraints.maxTurns;
+    const minTurns = chatConstraints.minTurns;
+    const userMessageBytes = getUtf8ByteLength(userMessage);
+
+    if (userMessageBytes < chatConstraints.minStudentMessageBytes) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `답변이 너무 짧아요. 최소 ${chatConstraints.minStudentMessageBytes}B 이상으로 적어 주세요.`,
+          messageBytes: userMessageBytes,
+          minStudentMessageBytes: chatConstraints.minStudentMessageBytes,
+          maxStudentMessageBytes: chatConstraints.maxStudentMessageBytes,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (userMessageBytes > chatConstraints.maxStudentMessageBytes) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `답변이 너무 길어요. 최대 ${chatConstraints.maxStudentMessageBytes}B 안으로 적어 주세요.`,
+          messageBytes: userMessageBytes,
+          minStudentMessageBytes: chatConstraints.minStudentMessageBytes,
+          maxStudentMessageBytes: chatConstraints.maxStudentMessageBytes,
+        },
+        { status: 400 }
+      );
+    }
+
     const shouldForceFinish = studentTurnCount >= effectiveMaxTurns;
     const allowFinish = studentTurnCount >= minTurns;
 
@@ -403,8 +429,8 @@ export async function POST(request) {
     ];
 
     const systemPrompt = assignment.type === 'art'
-      ? buildArtSystemPrompt(assignment, { shouldForceFinish, allowFinish })
-      : buildSystemPrompt(assignment, { shouldForceFinish, allowFinish });
+      ? buildArtSystemPrompt(assignment, { shouldForceFinish, allowFinish, maxTurns: effectiveMaxTurns })
+      : buildSystemPrompt(assignment, { shouldForceFinish, allowFinish, maxTurns: effectiveMaxTurns });
 
     let parsedReply = extractCompletionData(
       await createChatReply(

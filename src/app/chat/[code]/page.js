@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
+import { formatStudentMessageByteRange, getUtf8ByteLength } from '@/lib/chatConstraints';
 import { getAssignmentMaxScore } from '@/lib/scoreConfig';
 
 function buildWelcomeMessage(assignment) {
@@ -52,6 +53,26 @@ export default function ChatPage() {
   const isArt = assignment?.type === 'art';
   const hasArtReference = isArt && Boolean(assignment?.imageUrl);
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
+  const inputByteLength = useMemo(() => getUtf8ByteLength(input), [input]);
+  const byteRangeLabel = useMemo(
+    () => formatStudentMessageByteRange(assignment?.minStudentMessageBytes, assignment?.maxStudentMessageBytes),
+    [assignment]
+  );
+  const inputLengthError = useMemo(() => {
+    if (!assignment || !input.trim()) {
+      return '';
+    }
+
+    if (inputByteLength < assignment.minStudentMessageBytes) {
+      return `최소 ${assignment.minStudentMessageBytes}B 이상으로 적어 주세요. 지금은 ${inputByteLength}B예요.`;
+    }
+
+    if (inputByteLength > assignment.maxStudentMessageBytes) {
+      return `최대 ${assignment.maxStudentMessageBytes}B 안으로 적어 주세요. 지금은 ${inputByteLength}B예요.`;
+    }
+
+    return '';
+  }, [assignment, input, inputByteLength]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,8 +150,7 @@ export default function ChatPage() {
 
           // 복원된 대화에서 턴 정보 계산
           const restoredStudentTurns = restoredMessages.filter(m => m.role === 'student').length;
-          const artType = data.assignment.type === 'art';
-          const maxTurns = artType ? 10 : 3;
+          const maxTurns = data.assignment.maxTurns ?? 0;
           setTurnInfo({
             current: restoredStudentTurns,
             max: maxTurns,
@@ -156,7 +176,7 @@ export default function ChatPage() {
   }, [code, studentCode]);
 
   const sendMessage = async () => {
-    if (!input.trim() || sending || finished || !conversationId || !assignment) {
+    if (!input.trim() || sending || finished || !conversationId || !assignment || inputLengthError) {
       return;
     }
 
@@ -484,6 +504,17 @@ export default function ChatPage() {
                   : `💬 남은 대화 기회: ${turnInfo.remaining}번`}
               </div>
             )}
+            {assignment?.minStudentMessageBytes && assignment?.maxStudentMessageBytes && (
+              <div style={{
+                fontSize: '0.72rem',
+                color: inputLengthError ? '#ff8a8a' : 'var(--text-muted)',
+                textAlign: 'center',
+                paddingBottom: '0.35rem',
+                fontWeight: 500,
+              }}>
+                {inputLengthError || `답변 길이 ${inputByteLength}B · 권장 범위 ${byteRangeLabel}`}
+              </div>
+            )}
             <input
               id="chat-input"
               type="text"
@@ -499,7 +530,7 @@ export default function ChatPage() {
               id="btn-send"
               className="btn btn-primary"
               onClick={() => void sendMessage()}
-              disabled={sending || !input.trim()}
+              disabled={sending || !input.trim() || Boolean(inputLengthError)}
             >
               {sending ? '...' : '전송'}
             </button>

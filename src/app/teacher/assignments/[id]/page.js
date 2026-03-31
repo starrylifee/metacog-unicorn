@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 
+import { formatStudentMessageByteRange, normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { auth } from '@/lib/firebase';
 import {
   deleteAssignment,
@@ -72,6 +73,10 @@ export default function AssignmentDetail() {
     [scoreOptions]
   );
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
+  const chatConstraints = useMemo(
+    () => (assignment ? normalizeAssignmentConstraints(assignment) : null),
+    [assignment]
+  );
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -471,6 +476,19 @@ export default function AssignmentDetail() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
               채점 성향: {getScoringStyleLabel(assignment.scoringStyle)}
             </p>
+            {chatConstraints && (
+              <>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                  대화 턴: 최소 {chatConstraints.minTurns}턴 후 채점 가능 · 최대 {chatConstraints.maxTurns}턴
+                </p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                  학생 답변 길이: {formatStudentMessageByteRange(
+                    chatConstraints.minStudentMessageBytes,
+                    chatConstraints.maxStudentMessageBytes
+                  )}
+                </p>
+              </>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

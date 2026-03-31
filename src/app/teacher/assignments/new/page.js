@@ -7,7 +7,12 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import lessonPlanData from '@/data/mathLessonPlans.json';
 import { auth } from '@/lib/firebase';
-import { createAssignment } from '@/lib/firestore';
+import { createAssignment, getTeacherSettings } from '@/lib/firestore';
+import {
+  getChatLengthExamples,
+  getTeacherConstraintDefaults,
+  formatStudentMessageByteRange,
+} from '@/lib/chatConstraints';
 import {
   DEFAULT_SCORE_OPTIONS,
   DEFAULT_SCORING_STYLE,
@@ -44,6 +49,8 @@ function buildAssignmentContent({ gradeLabel, unitTitle, lessonTitle, teacherCon
 
 export default function NewAssignment() {
   const router = useRouter();
+  const defaultConstraints = useMemo(() => getTeacherConstraintDefaults({}, 'math'), []);
+  const lengthExamples = useMemo(() => getChatLengthExamples(), []);
   const [user, setUser] = useState(null);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(null);
@@ -60,17 +67,34 @@ export default function NewAssignment() {
     keywords: '',
     scoreOptionsInput: formatScoreOptions(DEFAULT_SCORE_OPTIONS),
     scoringStyle: DEFAULT_SCORING_STYLE,
-    minTurns: 2,
+    minTurns: defaultConstraints.minTurns,
+    maxTurns: defaultConstraints.maxTurns,
+    minStudentMessageBytes: defaultConstraints.minStudentMessageBytes,
+    maxStudentMessageBytes: defaultConstraints.maxStudentMessageBytes,
   });
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
       if (!nextUser) {
         router.push('/teacher');
         return;
       }
 
       setUser(nextUser);
+
+      try {
+        const settings = await getTeacherSettings(nextUser.uid);
+        const constraintDefaults = getTeacherConstraintDefaults(settings || {}, 'math');
+        setForm((prev) => ({
+          ...prev,
+          minTurns: constraintDefaults.minTurns,
+          maxTurns: constraintDefaults.maxTurns,
+          minStudentMessageBytes: constraintDefaults.minStudentMessageBytes,
+          maxStudentMessageBytes: constraintDefaults.maxStudentMessageBytes,
+        }));
+      } catch (error) {
+        console.error('Failed to load teacher defaults:', error);
+      }
     });
 
     return () => unsubscribe();
@@ -203,12 +227,19 @@ export default function NewAssignment() {
         scoreOptions: parsedScoreOptions.scoreOptions,
         scoringStyle: form.scoringStyle,
         minTurns: form.minTurns,
+        maxTurns: form.maxTurns,
+        minStudentMessageBytes: form.minStudentMessageBytes,
+        maxStudentMessageBytes: form.maxStudentMessageBytes,
       });
 
       setCreated({
         ...result,
         scoreOptions: parsedScoreOptions.scoreOptions,
         scoringStyle: form.scoringStyle,
+        minTurns: form.minTurns,
+        maxTurns: form.maxTurns,
+        minStudentMessageBytes: form.minStudentMessageBytes,
+        maxStudentMessageBytes: form.maxStudentMessageBytes,
       });
     } catch (error) {
       console.error('Create assignment error:', error);
@@ -261,6 +292,12 @@ export default function NewAssignment() {
             <p className="form-hint" style={{ marginTop: '0.35rem' }}>
               채점 성향: {getScoringStyleLabel(created.scoringStyle)} ({getScoringStyleDescription(created.scoringStyle)})
             </p>
+            <p className="form-hint" style={{ marginTop: '0.35rem' }}>
+              대화 턴: 최소 {created.minTurns}턴 후 채점 가능 · 최대 {created.maxTurns}턴
+            </p>
+            <p className="form-hint" style={{ marginTop: '0.35rem' }}>
+              학생 답변 길이: {formatStudentMessageByteRange(created.minStudentMessageBytes, created.maxStudentMessageBytes)}
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
@@ -305,6 +342,110 @@ export default function NewAssignment() {
                 required
               />
               <p className="form-hint">차시명을 고르면 제목이 자동으로 채워집니다.</p>
+            </div>
+          </div>
+
+          <div className="card-glass" style={{ marginBottom: '1.5rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem', color: 'var(--purple-light)' }}>
+              최대 대화 턴과 학생 답변 길이
+            </h3>
+            <p className="form-hint" style={{ marginBottom: '1.25rem' }}>
+              실제 학생 턴 제한과 답변 길이 제한을 과제에 함께 저장합니다.
+            </p>
+
+            <div className="form-group">
+              <label className="form-label">최대 대화 턴</label>
+              <div style={{ display: 'grid', gap: '0.75rem' }}>
+                {[
+                  { value: 3, label: '3턴(기본)', desc: '짧고 집중된 대화로 빠르게 마무리해요.' },
+                  { value: 4, label: '4턴', desc: '한두 번 더 확인하고 정리할 수 있어요.' },
+                  { value: 5, label: '5턴', desc: '학생이 충분히 설명할 시간을 더 줘요.' },
+                ].map((option) => {
+                  const isSelected = form.maxTurns === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setForm((prev) => ({
+                        ...prev,
+                        maxTurns: option.value,
+                        minTurns: Math.min(prev.minTurns, option.value),
+                      }))}
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.9rem 1rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: `1px solid ${isSelected ? 'var(--purple-light)' : 'var(--border-color)'}`,
+                        background: isSelected ? 'rgba(168, 85, 247, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{option.label}</div>
+                      <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>{option.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="form-hint" style={{ marginTop: '0.75rem' }}>
+                현재 저장값: 최소 {form.minTurns}턴 후 채점 가능 · 최대 {form.maxTurns}턴
+              </p>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">학생 답변 길이 제한</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max={form.maxStudentMessageBytes}
+                  className="form-input"
+                  value={form.minStudentMessageBytes}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value || 1);
+                    setForm((prev) => ({
+                      ...prev,
+                      minStudentMessageBytes: nextValue,
+                      maxStudentMessageBytes: Math.max(prev.maxStudentMessageBytes, nextValue),
+                    }));
+                  }}
+                />
+                <input
+                  type="number"
+                  min={form.minStudentMessageBytes}
+                  max="4000"
+                  className="form-input"
+                  value={form.maxStudentMessageBytes}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value || form.minStudentMessageBytes);
+                    setForm((prev) => ({
+                      ...prev,
+                      maxStudentMessageBytes: Math.max(nextValue, prev.minStudentMessageBytes),
+                    }));
+                  }}
+                />
+              </div>
+              <p className="form-hint" style={{ marginTop: '0.75rem' }}>
+                현재 범위: {formatStudentMessageByteRange(form.minStudentMessageBytes, form.maxStudentMessageBytes)}
+              </p>
+              <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
+                {lengthExamples.map((example) => (
+                  <div
+                    key={example.label}
+                    style={{
+                      padding: '0.75rem 0.9rem',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.88rem',
+                    }}
+                  >
+                    <strong style={{ color: 'var(--text-primary)' }}>{example.label}</strong> · {example.bytes}B
+                    <div style={{ marginTop: '0.35rem' }}>{example.text}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
