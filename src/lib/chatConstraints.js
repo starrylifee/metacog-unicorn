@@ -11,8 +11,10 @@ const TURN_LIMITS = {
   },
 };
 
+const LEGACY_DEFAULT_MIN_STUDENT_MESSAGE_BYTES = 15;
+
 const BYTE_LIMITS = {
-  minStudentMessageBytes: 15,
+  minStudentMessageBytes: 9,
   maxStudentMessageBytes: 220,
 };
 
@@ -39,6 +41,17 @@ function clampInteger(value, min, max, fallback) {
   }
 
   return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
+function normalizeMinStudentMessageBytes(value, fallback) {
+  const normalized = clampInteger(value, 1, 1000, fallback);
+
+  // Relax the old default so previously created assignments/settings also allow shorter replies.
+  if (normalized === LEGACY_DEFAULT_MIN_STUDENT_MESSAGE_BYTES) {
+    return BYTE_LIMITS.minStudentMessageBytes;
+  }
+
+  return normalized;
 }
 
 export function getUtf8ByteLength(text) {
@@ -91,10 +104,8 @@ export function getTeacherConstraintDefaults(settings = {}, type = 'math') {
     Math.min(minTurnsFallback, maxTurns)
   );
 
-  const minStudentMessageBytes = clampInteger(
+  const minStudentMessageBytes = normalizeMinStudentMessageBytes(
     settings.defaultMinStudentMessageBytes,
-    1,
-    1000,
     BYTE_LIMITS.minStudentMessageBytes
   );
 
@@ -130,10 +141,8 @@ export function normalizeAssignmentConstraints(assignment = {}) {
     Math.min(defaults.minTurns, maxTurns)
   );
 
-  const minStudentMessageBytes = clampInteger(
+  const minStudentMessageBytes = normalizeMinStudentMessageBytes(
     assignment.minStudentMessageBytes,
-    1,
-    1000,
     defaults.minStudentMessageBytes
   );
 
