@@ -50,11 +50,23 @@ export default function ChatPage() {
   const messagesEndRef = useRef(null);
 
   const isArt = assignment?.type === 'art';
+  const hasArtReference = isArt && Boolean(assignment?.imageUrl);
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
+
+  useEffect(() => {
+    if (!hasArtReference) {
+      setShowImagePanel(false);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && window.innerWidth >= 960) {
+      setShowImagePanel(true);
+    }
+  }, [hasArtReference]);
 
   useEffect(() => {
     async function init() {
@@ -320,7 +332,8 @@ export default function ChatPage() {
 
   return (
     <div className="page-container">
-      <div className="chat-container">
+      <div className={hasArtReference ? 'art-chat-layout' : undefined}>
+        <div className={`chat-container${hasArtReference ? ' chat-container-art' : ''}`}>
         <div className="chat-header">
           <div className="unicorn-avatar">🦄</div>
           <div className="chat-header-info">
@@ -355,7 +368,7 @@ export default function ChatPage() {
 
         <div className="chat-messages">
           {/* 미술: 스티키 썸네일 — 스크롤해도 항상 상단에 고정 */}
-          {isArt && assignment.imageUrl && (
+          {false && isArt && assignment.imageUrl && (
             <div
               onClick={() => setShowImagePanel(!showImagePanel)}
               style={{
@@ -491,6 +504,52 @@ export default function ChatPage() {
               {sending ? '...' : '전송'}
             </button>
           </div>
+        )}
+        </div>
+        {hasArtReference && (
+          <aside className={`art-reference-panel${showImagePanel ? ' is-open' : ''}`}>
+            <button
+              type="button"
+              className="art-reference-toggle"
+              onClick={() => setShowImagePanel((prev) => !prev)}
+              aria-expanded={showImagePanel}
+              aria-controls="art-reference-card"
+            >
+              {showImagePanel ? '그림 접기' : '그림 보기'}
+            </button>
+
+            <div id="art-reference-card" className="art-reference-card">
+              <div className="art-reference-card-header">
+                <div>
+                  <div className="art-reference-eyebrow">Artwork Reference</div>
+                  <h3>{assignment.paintingTitle || assignment.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="art-reference-close"
+                  onClick={() => setShowImagePanel(false)}
+                  aria-label="작품 패널 닫기"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="art-reference-image-wrap">
+                <img
+                  src={assignment.imageUrl}
+                  alt={assignment.paintingTitle || assignment.title}
+                  className="art-reference-image"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+
+              <p className="art-reference-caption">
+                {assignment.paintingTitle || assignment.title}
+                {assignment.artist ? ` · ${assignment.artist}` : ''}
+                {assignment.year ? ` (${assignment.year})` : ''}
+              </p>
+            </div>
+          </aside>
         )}
       </div>
     </div>
