@@ -303,17 +303,23 @@ async function createForcedFinalReply(assignment, conversationMessages) {
 }
 
 function buildFallbackCompletion(assignment, partialReply = '') {
+  const isArt = assignment.type === 'art';
   const scoreOptions = getAssignmentScoreOptions(assignment);
   const fallbackScore = getLowestAllowedScore(scoreOptions);
   const nextHigherScore = getNextHigherScore(scoreOptions, fallbackScore);
+  const fallbackTip = isArt
+    ? '다음에는 그림에서 가장 먼저 눈에 띈 부분 하나를 고르고, 왜 그렇게 느꼈는지 색이나 모양, 분위기를 붙여서 말해 보면 더 깊은 감상이 돼.'
+    : nextHigherScore === null
+      ? '이미 최고 점수야.'
+      : `${nextHigherScore}점을 받으려면 장난이나 짧은 답으로 끝내지 말고, 오늘 배운 핵심이 무엇인지와 왜 그런지 또는 어떤 예시가 있는지 함께 설명해 줘.`;
 
   return {
     finished: true,
     score: fallbackScore,
     feedback: '오늘 수업과 연결된 핵심 설명이 충분히 드러나지 않아 낮은 점수로 마무리했어.',
-    higherScoreTip: nextHigherScore === null
-      ? '이미 최고 점수야.'
-      : `${nextHigherScore}점을 받으려면 장난이나 짧은 답으로 끝내지 말고, 오늘 배운 핵심이 무엇인지와 왜 그런지 또는 어떤 예시가 있는지 함께 설명해 줘.`,
+    higherScoreTip: isArt ? '' : fallbackTip,
+    nextStepTip: isArt ? fallbackTip : '',
+    reachedStage: null,
     reply: partialReply || '여기까지 설명한 내용을 바탕으로 이번 대화는 마무리할게.',
   };
 }
@@ -434,6 +440,9 @@ export async function POST(request) {
     }
 
     const { reply, finished, score, feedback, higherScoreTip, nextStepTip, reachedStage } = parsedReply;
+    const safeFeedback = typeof feedback === 'string' ? feedback : '';
+    const safeHigherScoreTip = typeof higherScoreTip === 'string' ? higherScoreTip : '';
+    const safeNextStepTip = typeof nextStepTip === 'string' ? nextStepTip : '';
 
     const updatedMessages = [
       ...existingMessages,
@@ -445,9 +454,9 @@ export async function POST(request) {
 
     if (finished) {
       updateData.score = score;
-      updateData.feedback = feedback;
-      updateData.higherScoreTip = higherScoreTip;
-      updateData.nextStepTip = nextStepTip;
+      updateData.feedback = safeFeedback;
+      updateData.higherScoreTip = safeHigherScoreTip;
+      updateData.nextStepTip = safeNextStepTip;
       updateData.status = 'completed';
       updateData.approved = false;
       updateData.completedAt = FieldValue.serverTimestamp();
@@ -467,9 +476,9 @@ export async function POST(request) {
       reply,
       finished,
       score,
-      feedback,
-      higherScoreTip,
-      nextStepTip,
+      feedback: safeFeedback,
+      higherScoreTip: safeHigherScoreTip,
+      nextStepTip: safeNextStepTip,
       remainingTurns,
       maxTurns: effectiveMaxTurns,
       currentTurn: studentTurnCount,
