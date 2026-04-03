@@ -246,15 +246,145 @@ function extractCompletionData(content, assignment) {
   };
 }
 
+function parseJsonResponse(content) {
+  if (typeof content !== 'string') {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidates = [trimmed];
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) {
+    candidates.unshift(fencedMatch[1].trim());
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {
+      // Keep trying the next candidate.
+    }
+  }
+
+  return null;
+}
+
+function buildConversationTranscript(conversationMessages) {
+  return conversationMessages
+    .map((message, index) => {
+      const speaker = message.role === 'user' ? '학생' : '유니콘';
+      return `${index + 1}. ${speaker}: ${String(message.content ?? '').trim()}`;
+    })
+    .join('\n');
+}
+
+function normalizeStructuredFinalReply(payload, assignment) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const scoreOptions = getAssignmentScoreOptions(assignment);
+  const score = getClosestAllowedScore(scoreOptions, Number(payload.score));
+  const reply = typeof payload.reply === 'string' ? payload.reply.trim() : '';
+  const feedback = typeof payload.feedback === 'string' ? payload.feedback.trim() : '';
+
+  if (!Number.isFinite(score) || !reply || !feedback) {
+    return null;
+  }
+
+  const result = {
+    finished: true,
+    score,
+    feedback,
+    reply,
+    higherScoreTip: '',
+    nextStepTip: '',
+    reachedStage: null,
+  };
+
+  if (assignment.type === 'art') {
+    const reachedStage = Number.parseInt(payload.reachedStage, 10);
+    result.reachedStage = reachedStage >= 1 && reachedStage <= 4 ? reachedStage : null;
+    result.nextStepTip =
+      typeof payload.nextStepTip === 'string' ? payload.nextStepTip.trim() : '';
+  } else {
+    result.higherScoreTip =
+      typeof payload.higherScoreTip === 'string' ? payload.higherScoreTip.trim() : '';
+  }
+
+  return result;
+}
+
 async function createChatReply(messages, options = {}) {
   const completion = await openai.chat.completions.create({
     model: MODEL_NAME,
     messages,
     temperature: options.temperature ?? 0.7,
     max_tokens: options.maxTokens ?? 650,
+    ...(options.responseFormat ? { response_format: options.responseFormat } : {}),
   });
 
   return completion.choices[0]?.message?.content?.trim() || '';
+}
+
+function buildForcedFinalEvaluationPrompt(assignment) {
+  const scoreOptions = getAssignmentScoreOptions(assignment);
+  const maxScore = getAssignmentMaxScore(assignment);
+
+  if (assignment.type === 'art') {
+    const paintingInfo = [
+      `- 작품명: ${assignment.paintingTitle || assignment.title}`,
+      assignment.artist ? `- 작가: ${assignment.artist}` : null,
+      assignment.year ? `- 제작 연도: ${assignment.year}` : null,
+    ].filter(Boolean).join('\n');
+
+    return `너는 미술 감상 대화의 최종 채점기다.
+반드시 JSON 객체만 출력하고, 마크다운이나 코드블록은 쓰지 마.
+
+채점 기준:
+- 허용 점수는 ${formatScoreOptions(scoreOptions)}점뿐이다.
+- 정확한 미술 지식보다 감상의 깊이를 본다.
+- 학생이 작품을 구체적으로 관찰했는지, 표현 방법을 분석했는지, 작가의 감정이나 이야기를 해석했는지, 자신의 판단과 근거를 말했는지를 함께 본다.
+- reachedStage는 가장 높게 도달한 감상 단계다.
+  1: 보이는 것 관찰
+  2: 표현 방법이나 색, 구도 분석
+  3: 작가 감정, 분위기, 이야기 해석
+  4: 자기 판단과 근거까지 표현
+- reply는 학생에게 보내는 2~4문장 마무리 말이다. 질문형으로 끝내지 마.
+- feedback는 왜 그 점수를 주었는지 1~2문장으로 구체적으로 설명한다.
+- nextStepTip는 다음 그림 감상에서 바로 시도할 수 있는 한 가지를 제안한다.
+- 최고 점수는 ${maxScore}점이다.
+
+작품 정보:
+${paintingInfo}
+
+반드시 아래 형태의 JSON만 출력해.
+{"reply":"string","score":0,"reachedStage":1,"feedback":"string","nextStepTip":"string"}`;
+  }
+
+  return `너는 학습 대화의 최종 채점기다.
+반드시 JSON 객체만 출력하고, 마크다운이나 코드블록은 쓰지 마.
+
+채점 기준:
+- 허용 점수는 ${formatScoreOptions(scoreOptions)}점뿐이다.
+- 학생이 오늘 배운 개념을 자신의 말로 얼마나 정확하고 구체적으로 설명했는지 평가한다.
+- reply는 학생에게 보내는 2~4문장 마무리 말이다. 질문형으로 끝내지 마.
+- feedback는 왜 그 점수를 주었는지 1~2문장으로 설명한다.
+- higherScoreTip는 다음 점수를 받으려면 무엇을 더 말했어야 하는지 구체적으로 적는다.
+- 최고 점수는 ${maxScore}점이다.
+
+반드시 아래 형태의 JSON만 출력해.
+{"reply":"string","score":0,"feedback":"string","higherScoreTip":"string"}`;
 }
 
 async function createForcedFinalReply(assignment, conversationMessages) {
@@ -294,6 +424,39 @@ async function createForcedFinalReply(assignment, conversationMessages) {
     const parsed = extractCompletionData(reply, assignment);
 
     if (parsed.finished) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+async function createStructuredForcedFinalReply(assignment, conversationMessages) {
+  const transcript = buildConversationTranscript(conversationMessages);
+
+  const attempts = [
+    { temperature: 0, maxTokens: 360 },
+    { temperature: 0.2, maxTokens: 420 },
+  ];
+
+  for (const attempt of attempts) {
+    const reply = await createChatReply(
+      [
+        { role: 'system', content: buildForcedFinalEvaluationPrompt(assignment) },
+        {
+          role: 'user',
+          content: `아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}`,
+        },
+      ],
+      {
+        temperature: attempt.temperature,
+        maxTokens: attempt.maxTokens,
+        responseFormat: { type: 'json_object' },
+      }
+    );
+
+    const parsed = normalizeStructuredFinalReply(parseJsonResponse(reply), assignment);
+    if (parsed) {
       return parsed;
     }
   }
@@ -455,13 +618,20 @@ export async function POST(request) {
     }
 
     if (shouldForceFinish && !parsedReply.finished) {
-      const forcedFinalReply = await createForcedFinalReply(assignment, conversationMessages);
+      const forcedFinalReply =
+        await createStructuredForcedFinalReply(assignment, conversationMessages) ||
+        await createForcedFinalReply(assignment, conversationMessages);
       if (forcedFinalReply) {
         parsedReply = forcedFinalReply;
       }
     }
 
     if (shouldForceFinish && !parsedReply.finished) {
+      console.warn('Forced finalization fell back to default completion.', {
+        assignmentId,
+        conversationId,
+        assignmentType: assignment.type || 'math',
+      });
       parsedReply = buildFallbackCompletion(assignment, parsedReply.reply);
     }
 
