@@ -132,6 +132,15 @@ export default function ChatPage() {
           return;
         }
 
+        if (!conversationData.success) {
+          setBlocked(true);
+          setBlockedMessage(
+            conversationData.error || '지금은 이 번호로 입장할 수 없어요. 학생 번호를 다시 확인해 주세요.'
+          );
+          setLoading(false);
+          return;
+        }
+
         if (conversationData.success) {
           const restoredConversation = conversationData.conversation;
           const restoredMessages = Array.isArray(restoredConversation?.messages)

@@ -101,6 +101,16 @@ export async function deleteAssignment(id) {
   await parseResponse(response);
 }
 
+export async function duplicateAssignment(id) {
+  const response = await fetch(`/api/teacher/assignments/${id}`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+
+  const data = await parseResponse(response);
+  return data.assignment;
+}
+
 export async function getConversationsByAssignment(assignmentId) {
   const response = await fetch(`/api/teacher/assignments/${assignmentId}/conversations`, {
     method: 'GET',

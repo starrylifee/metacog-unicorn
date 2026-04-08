@@ -9,6 +9,7 @@ import { formatStudentMessageByteRange, normalizeAssignmentConstraints } from '@
 import { auth } from '@/lib/firebase';
 import {
   deleteAssignment,
+  duplicateAssignment,
   getAssignmentById,
   getConversationsByAssignment,
   toggleAssignment,
@@ -190,6 +191,21 @@ export default function AssignmentDetail() {
     }
   };
 
+  const handleDuplicateAssignment = async () => {
+    if (!assignment) return;
+
+    setActionLoading('duplicate-assignment');
+
+    try {
+      const duplicated = await duplicateAssignment(id);
+      router.push(`/teacher/assignments/${duplicated.id}`);
+    } catch (error) {
+      console.error('Duplicate assignment error:', error);
+      alert('과제를 복사하지 못했습니다.');
+      setActionLoading(null);
+    }
+  };
+
   const handleApprove = async (conversation) => {
     if (!canApproveConversation(conversation)) {
       return;
@@ -227,7 +243,7 @@ export default function AssignmentDetail() {
     setActionLoading(null);
   };
 
-  const handleApproveAll = async () => {
+  const handleApproveAllLegacy = async () => {
     const pendingConversations = conversations.filter(canApproveConversation);
 
     if (pendingConversations.length === 0) {
@@ -261,6 +277,74 @@ export default function AssignmentDetail() {
       }
 
       await loadData();
+    } catch (error) {
+      console.error('Approve all error:', error);
+      alert(error instanceof Error ? error.message : '일괄 승인 중 오류가 발생했습니다.');
+      await loadData();
+    }
+
+    setActionLoading(null);
+  };
+
+  const handleApproveAll = async () => {
+    const pendingConversations = conversations.filter(canApproveConversation);
+
+    if (pendingConversations.length === 0) {
+      alert('승인 대기 중인 학생이 없습니다.');
+      return;
+    }
+
+    if (!confirm(`${pendingConversations.length}명의 제출을 모두 승인할까요?`)) {
+      return;
+    }
+
+    setActionLoading('all');
+
+    try {
+      const headers = await getAuthHeaders();
+      const successStudentCodes = [];
+      const failedApprovals = [];
+
+      for (const conversation of pendingConversations) {
+        const response = await fetch('/api/approve', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ conversationId: conversation.id }),
+        });
+        const data = await response.json().catch(() => ({
+          success: false,
+          error: `서버 오류 (HTTP ${response.status})`,
+        }));
+
+        if (response.ok && data.success) {
+          successStudentCodes.push(conversation.studentCode);
+          continue;
+        }
+
+        const errMsg = typeof data.error === 'string'
+          ? data.error
+          : (data.error ? JSON.stringify(data.error) : `${conversation.studentCode}번 승인에 실패했습니다.`);
+        failedApprovals.push({
+          studentCode: conversation.studentCode,
+          message: errMsg,
+        });
+      }
+
+      await loadData();
+
+      if (failedApprovals.length === 0) {
+        alert(`${successStudentCodes.length}명의 제출을 모두 승인했습니다.`);
+      } else {
+        const failedSummary = failedApprovals
+          .map(({ studentCode, message }) => `- ${studentCode}번: ${message}`)
+          .join('\n');
+        const successSummary = successStudentCodes.length > 0
+          ? `승인 완료: ${successStudentCodes.join(', ')}번\n\n`
+          : '';
+        alert(
+          `${successSummary}문제가 있는 번호만 제외하고 나머지는 승인했습니다.\n\n확인 필요:\n${failedSummary}`
+        );
+      }
     } catch (error) {
       console.error('Approve all error:', error);
       alert(error instanceof Error ? error.message : '일괄 승인 중 오류가 발생했습니다.');
@@ -501,6 +585,13 @@ export default function AssignmentDetail() {
                 {actionLoading === 'all' ? '처리 중...' : `전체 승인 (${pendingCount})`}
               </button>
             )}
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleDuplicateAssignment}
+              disabled={actionLoading === 'duplicate-assignment'}
+            >
+              {actionLoading === 'duplicate-assignment' ? '복사 중...' : '과제 복사'}
+            </button>
             <button
               className={`btn ${assignment.isActive ? 'btn-danger' : 'btn-secondary'} btn-sm`}
               onClick={handleToggle}

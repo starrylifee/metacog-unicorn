@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 
+import {
+  GROWND_BASE_URL,
+  buildGrowndStudentNotFoundMessage,
+  extractGrowndErrorDetail,
+  isGrowndStudentNotFound,
+  parseGrowndResponse,
+} from '@/lib/grownd';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
-export const maxDuration = 30; // Vercel Pro+ 에서 최대 30초 허용
+export const maxDuration = 30;
 
 async function getOwnedConversation(conversationId, teacherUid) {
   const convRef = adminDb.collection('conversations').doc(conversationId);
@@ -65,11 +72,11 @@ async function reserveApproval(conversationId, teacherUid) {
     }
 
     if (conv.approvalStatus === 'processing') {
-      throw new RequestError('현재 승인 처리 중입니다. 잠시 후 상태를 다시 확인해 주세요.', 409);
+      throw new RequestError('현재 승인 처리 중입니다. 잠시 후 다시 확인해 주세요.', 409);
     }
 
     if (conv.status !== 'completed' || !Number.isFinite(conv.score)) {
-      throw new RequestError('아직 채점이 완료되지 않은 제출입니다.', 409);
+      throw new RequestError('아직 채점이 끝나지 않은 제출입니다.', 409);
     }
 
     transaction.update(convRef, {
@@ -81,17 +88,6 @@ async function reserveApproval(conversationId, teacherUid) {
 
     return { convRef, conv, assignmentType: assignment.type || 'math' };
   });
-}
-
-async function parseGrowndResponse(response) {
-  const raw = await response.text();
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return { raw };
-  }
 }
 
 async function updateApprovalFailure(convRef, message, status, options = {}) {
@@ -108,6 +104,14 @@ async function updateApprovalFailure(convRef, message, status, options = {}) {
   });
 }
 
+function buildGrowndDescription(assignmentType, score) {
+  if (assignmentType === 'art') {
+    return `미술 유니콘 과제 완료 (${score}점)`;
+  }
+
+  return `메타인지 유니콘 과제 완료 (${score}점)`;
+}
+
 export async function POST(request) {
   let reservedConversationRef = null;
 
@@ -119,7 +123,6 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: '대화 ID가 필요합니다.' }, { status: 400 });
     }
 
-    // teacherSettings 조회와 approval 예약을 병렬로 실행해 시간 절약
     const teacherRef = adminDb.collection('teachers').doc(teacher.uid);
     const [teacherSnap, { convRef, conv, assignmentType }] = await Promise.all([
       teacherRef.get(),
@@ -128,7 +131,6 @@ export async function POST(request) {
     reservedConversationRef = convRef;
 
     if (!teacherSnap.exists) {
-      // 이미 processing으로 예약됐으므로 실패로 마킹
       await updateApprovalFailure(convRef, '교사 설정을 찾을 수 없습니다.', null);
       return NextResponse.json(
         { success: false, error: '교사 설정을 찾을 수 없습니다.' },
@@ -136,7 +138,7 @@ export async function POST(request) {
       );
     }
 
-    const teacherSettings = teacherSnap.data();
+    const teacherSettings = teacherSnap.data() || {};
     const { growndApiKey, growndClassId } = teacherSettings;
 
     if (!growndApiKey || !growndClassId) {
@@ -147,8 +149,6 @@ export async function POST(request) {
       );
     }
 
-    // Grownd는 points 0을 허용하지 않음 (0.01~1000 범위)
-    // 0점은 Grownd 포인트 지급 없이 승인 처리만 함
     if (!conv.score || conv.score <= 0) {
       await convRef.update({
         approved: true,
@@ -161,18 +161,17 @@ export async function POST(request) {
 
       return NextResponse.json({
         success: true,
-        message: '승인 완료 (0점은 Grownd 포인트 지급 없이 처리됩니다).',
+        message: '승인 처리만 완료했습니다. 0점 제출은 Grownd로 전송하지 않습니다.',
       });
     }
 
     const growndAbort = new AbortController();
-
     const growndTimeout = setTimeout(() => growndAbort.abort(), 5000);
 
     let growndResponse;
     try {
       growndResponse = await fetch(
-        `https://growndcard.com/api/v1/classes/${growndClassId}/students/${conv.studentCode}/points`,
+        `${GROWND_BASE_URL}/api/v1/classes/${growndClassId}/students/${conv.studentCode}/points`,
         {
           method: 'POST',
           headers: {
@@ -182,9 +181,7 @@ export async function POST(request) {
           body: JSON.stringify({
             type: 'reward',
             points: conv.score,
-            description: assignmentType === 'art'
-              ? `미술 유니콘 명화 감상 완료 (${conv.score}점)`
-              : `메타인지 유니콘 학습 완료 (${conv.score}점)`,
+            description: buildGrowndDescription(assignmentType, conv.score),
             source: 'MetacogUnicorn',
           }),
           signal: growndAbort.signal,
@@ -194,43 +191,32 @@ export async function POST(request) {
       clearTimeout(growndTimeout);
       const isTimeout = fetchError?.name === 'AbortError';
       const errMsg = isTimeout
-        ? 'Grownd 서버 응답 시간 초과 (8초). 잠시 후 다시 시도해 주세요.'
-        : `Grownd 연결 실패: ${fetchError?.message || '알 수 없는 오류'}`;
+        ? 'Grownd 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.'
+        : `Grownd 연결에 실패했습니다: ${fetchError?.message || '알 수 없는 오류'}`;
       await updateApprovalFailure(reservedConversationRef ?? convRef, errMsg, null);
       return NextResponse.json({ success: false, error: errMsg }, { status: 502 });
     }
     clearTimeout(growndTimeout);
 
     const growndResult = await parseGrowndResponse(growndResponse);
-
-    const growndErrorDetail = growndResult?.message
-      || growndResult?.error
-      || growndResult?.detail
-      || growndResult?.msg
-      || (growndResult?.raw
-          ? `Grownd 응답(${growndResponse.status}): ${String(growndResult.raw).slice(0, 300)}`
-          : null)
-      || (growndResult
-          ? `Grownd 응답(${growndResponse.status}): ${JSON.stringify(growndResult).slice(0, 300)}`
-          : null)
-      || `Grownd 포인트 지급 실패 (HTTP ${growndResponse.status})`;
+    const studentNotFound = isGrowndStudentNotFound(growndResponse, growndResult);
+    const growndErrorDetail = studentNotFound
+      ? buildGrowndStudentNotFoundMessage(conv.studentCode)
+      : extractGrowndErrorDetail(growndResponse, growndResult);
 
     console.log('[Grownd] status:', growndResponse.status, '| result:', JSON.stringify(growndResult));
 
     if (!growndResponse.ok) {
-      await updateApprovalFailure(
-        convRef,
-        growndErrorDetail,
-        growndResponse.status
-      );
+      await updateApprovalFailure(convRef, growndErrorDetail, growndResponse.status);
 
       return NextResponse.json(
         {
           success: false,
           error: growndErrorDetail,
           growndResult,
+          code: studentNotFound ? 'student_not_found' : 'grownd_request_failed',
         },
-        { status: 502 }
+        { status: studentNotFound ? 409 : 502 }
       );
     }
 
@@ -271,7 +257,7 @@ export async function POST(request) {
       {
         success: false,
         error: reservedConversationRef
-          ? '승인 처리 상태를 확정하지 못했습니다. 중복 지급을 막기 위해 자동 재시도는 막아 두었습니다.'
+          ? '승인 처리 상태를 확정하지 못했습니다. 중복 지급을 막기 위해 자동 재시도는 멈췄습니다.'
           : '서버 오류',
       },
       { status: 500 }

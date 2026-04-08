@@ -17,10 +17,23 @@ function serializeConversation(doc) {
     score: data.score ?? null,
     feedback: data.feedback ?? '',
     higherScoreTip: data.higherScoreTip ?? '',
+    nextStepTip: data.nextStepTip ?? '',
+    reachedStage: data.reachedStage ?? null,
     status: data.status || 'in_progress',
     approved: Boolean(data.approved),
     approvalStatus: data.approvalStatus || null,
   };
+}
+
+function applyConversationCookie(response, sessionToken) {
+  response.cookies.set(CHAT_SESSION_COOKIE, sessionToken, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
+
+  return response;
 }
 
 export async function POST(request) {
@@ -35,7 +48,7 @@ export async function POST(request) {
       normalizedStudentCode > 99
     ) {
       return NextResponse.json(
-        { success: false, error: '필수 정보가 없거나 형식이 올바르지 않습니다.' },
+        { success: false, error: '학생 번호를 다시 확인해 주세요.' },
         { status: 400 }
       );
     }
@@ -61,13 +74,30 @@ export async function POST(request) {
     if (!existingSnap.empty) {
       const existingDoc = existingSnap.docs[0];
       const existing = existingDoc.data();
-      const canResume =
-        existing.status === 'in_progress' &&
-        sessionTokenHash &&
-        existing.sessionTokenHash &&
-        existing.sessionTokenHash === sessionTokenHash;
 
-      if (canResume) {
+      if (existing.status === 'in_progress') {
+        const shouldRotateSession =
+          !sessionTokenHash ||
+          !existing.sessionTokenHash ||
+          existing.sessionTokenHash !== sessionTokenHash;
+
+        if (shouldRotateSession) {
+          const resumedSessionToken = createChatSessionToken();
+          await existingDoc.ref.update({
+            sessionTokenHash: hashChatSessionToken(resumedSessionToken),
+          });
+
+          return applyConversationCookie(
+            NextResponse.json({
+              success: true,
+              resumed: true,
+              conversationId: existingDoc.id,
+              conversation: serializeConversation(existingDoc),
+            }),
+            resumedSessionToken
+          );
+        }
+
         return NextResponse.json({
           success: true,
           resumed: true,
@@ -78,10 +108,7 @@ export async function POST(request) {
 
       return NextResponse.json({
         success: false,
-        error:
-          existing.status === 'completed'
-            ? '이미 참여가 완료된 번호입니다. 교사에게 문의해 주세요.'
-            : '이미 진행 중인 대화가 있습니다. 같은 기기에서 다시 접속해 주세요.',
+        error: '이미 완료된 번호입니다. 선생님께 문의해 주세요.',
         alreadyExists: true,
       });
     }
@@ -95,6 +122,7 @@ export async function POST(request) {
       score: null,
       feedback: null,
       higherScoreTip: null,
+      nextStepTip: null,
       status: 'in_progress',
       approved: false,
       approvalStatus: null,
@@ -103,20 +131,14 @@ export async function POST(request) {
       completedAt: null,
     });
 
-    const response = NextResponse.json({
-      success: true,
-      resumed: false,
-      conversationId: docRef.id,
-    });
-
-    response.cookies.set(CHAT_SESSION_COOKIE, newSessionToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    });
-
-    return response;
+    return applyConversationCookie(
+      NextResponse.json({
+        success: true,
+        resumed: false,
+        conversationId: docRef.id,
+      }),
+      newSessionToken
+    );
   } catch (error) {
     console.error('=== Create Conversation Error Details ===');
     console.error('Error message:', error?.message || 'Unknown error');
