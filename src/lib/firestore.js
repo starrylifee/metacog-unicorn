@@ -111,6 +111,17 @@ export async function duplicateAssignment(id) {
   return data.assignment;
 }
 
+export async function updateAssignment(id, payload) {
+  const response = await fetch(`/api/teacher/assignments/${id}`, {
+    method: 'PATCH',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  const data = await parseResponse(response);
+  return data.assignment;
+}
+
 export async function getConversationsByAssignment(assignmentId) {
   const response = await fetch(`/api/teacher/assignments/${assignmentId}/conversations`, {
     method: 'GET',

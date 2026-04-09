@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { formatStudentMessageByteRange, normalizeAssignmentConstraints } from '@/lib/chatConstraints';
+import { hasStudentStartedConversation } from '@/lib/conversationState';
 import { auth } from '@/lib/firebase';
 import {
   deleteAssignment,
@@ -18,7 +19,6 @@ import {
   formatScoreOptions,
   getAssignmentMaxScore,
   getAssignmentScoreOptions,
-  getNextHigherScore,
   getScoringStyleLabel,
 } from '@/lib/scoreConfig';
 
@@ -198,7 +198,7 @@ export default function AssignmentDetail() {
 
     try {
       const duplicated = await duplicateAssignment(id);
-      router.push(`/teacher/assignments/${duplicated.id}`);
+      router.push(`/teacher/assignments/edit?id=${duplicated.id}`);
     } catch (error) {
       console.error('Duplicate assignment error:', error);
       alert('과제를 복사하지 못했습니다.');
@@ -438,13 +438,7 @@ export default function AssignmentDetail() {
   };
 
   const pendingCount = conversations.filter(canApproveConversation).length;
-  const selectedNextHigherScore = useMemo(() => {
-    if (!selectedConv || !Number.isFinite(selectedConv.score)) {
-      return null;
-    }
-
-    return getNextHigherScore(scoreOptions, selectedConv.score);
-  }, [scoreOptions, selectedConv]);
+  const canEditAssignment = !conversations.some(hasStudentStartedConversation);
 
   if (loading) {
     return (
@@ -592,6 +586,15 @@ export default function AssignmentDetail() {
             >
               {actionLoading === 'duplicate-assignment' ? '복사 중...' : '과제 복사'}
             </button>
+            {canEditAssignment ? (
+              <Link href={`/teacher/assignments/edit?id=${assignment.id}`} className="btn btn-secondary btn-sm">
+                과제 수정
+              </Link>
+            ) : (
+              <button className="btn btn-secondary btn-sm" disabled title="학생이 시작한 뒤에는 수정할 수 없습니다.">
+                수정 불가
+              </button>
+            )}
             <button
               className={`btn ${assignment.isActive ? 'btn-danger' : 'btn-secondary'} btn-sm`}
               onClick={handleToggle}

@@ -646,7 +646,10 @@ export async function POST(request) {
       { role: 'unicorn', content: reply, timestamp: new Date().toISOString() },
     ];
 
-    const updateData = { messages: updatedMessages };
+    const updateData = {
+      messages: updatedMessages,
+      studentMessageCount: studentTurnCount,
+    };
 
     if (finished) {
       updateData.score = score;

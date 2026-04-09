@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
 import { formatStudentMessageByteRange, getUtf8ByteLength } from '@/lib/chatConstraints';
+import { getStudentMessageCount } from '@/lib/conversationState';
 import { getAssignmentMaxScore } from '@/lib/scoreConfig';
 
 function buildWelcomeMessage(assignment) {
@@ -49,6 +50,7 @@ export default function ChatPage() {
   const [readyToChat, setReadyToChat] = useState(false);
   const [turnInfo, setTurnInfo] = useState({ current: 0, max: 0, remaining: 0 });
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   const isArt = assignment?.type === 'art';
   const hasArtReference = isArt && Boolean(assignment?.imageUrl);
@@ -88,6 +90,22 @@ export default function ChatPage() {
       setShowImagePanel(true);
     }
   }, [hasArtReference]);
+
+  useEffect(() => {
+    if (loading || blocked || sending || finished || !conversationId) {
+      return;
+    }
+
+    if (isArt && !readyToChat) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [blocked, conversationId, finished, isArt, loading, readyToChat, sending]);
 
   useEffect(() => {
     async function init() {
@@ -158,7 +176,7 @@ export default function ChatPage() {
           }
 
           // 복원된 대화에서 턴 정보 계산
-          const restoredStudentTurns = restoredMessages.filter(m => m.role === 'student').length;
+          const restoredStudentTurns = getStudentMessageCount(restoredConversation);
           const maxTurns = data.assignment.maxTurns ?? 0;
           setTurnInfo({
             current: restoredStudentTurns,
@@ -525,6 +543,7 @@ export default function ChatPage() {
               </div>
             )}
             <input
+              ref={inputRef}
               id="chat-input"
               type="text"
               className="form-input"

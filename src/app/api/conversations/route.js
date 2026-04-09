@@ -5,6 +5,7 @@ import {
   createChatSessionToken,
   hashChatSessionToken,
 } from '@/lib/chatSession';
+import { getStudentMessageCount } from '@/lib/conversationState';
 import { FieldValue, adminDb } from '@/lib/serverDb';
 
 function serializeConversation(doc) {
@@ -14,6 +15,7 @@ function serializeConversation(doc) {
     id: doc.id,
     studentCode: data.studentCode,
     messages: Array.isArray(data.messages) ? data.messages : [],
+    studentMessageCount: getStudentMessageCount(data),
     score: data.score ?? null,
     feedback: data.feedback ?? '',
     higherScoreTip: data.higherScoreTip ?? '',
@@ -119,6 +121,7 @@ export async function POST(request) {
       studentCode: normalizedStudentCode,
       studentName: `학생 ${studentCode}`,
       messages: [],
+      studentMessageCount: 0,
       score: null,
       feedback: null,
       higherScoreTip: null,

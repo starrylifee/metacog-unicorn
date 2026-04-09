@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { generateUniqueEntryCode } from '@/lib/assignmentEntryCode';
 import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
+import { hasStudentStartedConversation } from '@/lib/conversationState';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
 import {
   getAssignmentScoreOptions,
@@ -37,6 +38,29 @@ function buildCopiedTitle(title) {
     : `${normalizedTitle} (복사본)`;
 }
 
+function normalizeStringArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.map((value) => String(value).trim()).filter(Boolean);
+}
+
+async function assertAssignmentNotStarted(assignmentId) {
+  const conversationsSnapshot = await adminDb
+    .collection('conversations')
+    .where('assignmentId', '==', assignmentId)
+    .get();
+
+  const hasStartedConversation = conversationsSnapshot.docs.some((conversationDoc) =>
+    hasStudentStartedConversation(conversationDoc.data())
+  );
+
+  if (hasStartedConversation) {
+    throw new RequestError('학생이 이미 시작한 과제는 수정할 수 없습니다.', 409);
+  }
+}
+
 async function duplicateAssignment(assignmentId, assignment, teacherUid) {
   const validatedScoreOptions = validateScoreOptions(getAssignmentScoreOptions(assignment));
   if (!validatedScoreOptions.ok) {
@@ -64,12 +88,8 @@ async function duplicateAssignment(assignmentId, assignment, teacherUid) {
     grade: String(assignment.grade || '').trim(),
     learningObjective: String(assignment.learningObjective || '').trim(),
     content: String(assignment.content || '').trim(),
-    keywords: Array.isArray(assignment.keywords)
-      ? assignment.keywords.map((keyword) => String(keyword).trim()).filter(Boolean)
-      : [],
-    standards: Array.isArray(assignment.standards)
-      ? assignment.standards.map((standard) => String(standard).trim()).filter(Boolean)
-      : [],
+    keywords: normalizeStringArray(assignment.keywords),
+    standards: normalizeStringArray(assignment.standards),
     scoreOptions: validatedScoreOptions.scoreOptions,
     maxScore: validatedScoreOptions.maxScore,
     scoringStyle: normalizeScoringStyle(assignment.scoringStyle),
@@ -77,7 +97,7 @@ async function duplicateAssignment(assignmentId, assignment, teacherUid) {
     maxTurns: normalizedConstraints.maxTurns,
     minStudentMessageBytes: normalizedConstraints.minStudentMessageBytes,
     maxStudentMessageBytes: normalizedConstraints.maxStudentMessageBytes,
-    isActive: true,
+    isActive: false,
     copiedFromAssignmentId: assignmentId,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
@@ -103,6 +123,71 @@ async function duplicateAssignment(assignmentId, assignment, teacherUid) {
     id: docRef.id,
     entryCode,
   };
+}
+
+function buildUpdatedAssignmentData(existingAssignment, payload) {
+  const type = existingAssignment.type === 'art' ? 'art' : 'math';
+  const normalizedConstraints = normalizeAssignmentConstraints({
+    ...existingAssignment,
+    ...payload,
+    type,
+  });
+  const validatedScoreOptions = validateScoreOptions(payload.scoreOptions);
+
+  if (!validatedScoreOptions.ok) {
+    throw new RequestError(validatedScoreOptions.error, 400);
+  }
+
+  const title = String(payload.title || '').trim();
+  if (!title) {
+    throw new RequestError('과제 제목을 입력해 주세요.', 400);
+  }
+
+  const content = String(payload.content || '').trim();
+  if (type !== 'art' && !content) {
+    throw new RequestError('수업 내용을 입력해 주세요.', 400);
+  }
+
+  const updateData = {
+    title,
+    subject: String(payload.subject || '').trim(),
+    grade: String(payload.grade || '').trim(),
+    learningObjective: String(payload.learningObjective || '').trim(),
+    content,
+    keywords: normalizeStringArray(payload.keywords),
+    standards: normalizeStringArray(payload.standards),
+    scoreOptions: validatedScoreOptions.scoreOptions,
+    maxScore: validatedScoreOptions.maxScore,
+    scoringStyle: normalizeScoringStyle(payload.scoringStyle),
+    minTurns: normalizedConstraints.minTurns,
+    maxTurns: normalizedConstraints.maxTurns,
+    minStudentMessageBytes: normalizedConstraints.minStudentMessageBytes,
+    maxStudentMessageBytes: normalizedConstraints.maxStudentMessageBytes,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  if (type === 'art') {
+    const paintingTitle = String(payload.paintingTitle || '').trim();
+    const artist = String(payload.artist || '').trim();
+
+    if (!paintingTitle || !artist) {
+      throw new RequestError('작품명과 작가를 입력해 주세요.', 400);
+    }
+
+    updateData.paintingTitle = paintingTitle;
+    updateData.artist = artist;
+    updateData.year = String(payload.year || '').trim();
+    updateData.imageUrl = String(payload.imageUrl || '').trim();
+    updateData.paintingContext = String(payload.paintingContext || '').trim();
+    updateData.appreciationLevel = payload.appreciationLevel ?? null;
+    updateData.appreciationLevelLabel = String(payload.appreciationLevelLabel || '').trim();
+    updateData.appreciationPrompt = String(payload.appreciationPrompt || '').trim();
+    updateData.difficultyLevel = String(payload.difficultyLevel || '').trim();
+    updateData.difficultyLabel = String(payload.difficultyLabel || '').trim();
+    updateData.difficultyPrompt = String(payload.difficultyPrompt || '').trim();
+  }
+
+  return updateData;
 }
 
 async function getAssignmentId(paramsPromise) {
@@ -163,26 +248,37 @@ export async function PATCH(request, { params }) {
   try {
     const teacher = await authenticateFirebaseRequest(request);
     const assignmentId = await getAssignmentId(params);
-    const { ref } = await getOwnedAssignment(assignmentId, teacher.uid);
-    const { isActive } = await request.json();
+    const { ref, snapshot } = await getOwnedAssignment(assignmentId, teacher.uid);
+    const body = await request.json();
+    const bodyKeys = Object.keys(body || {});
 
-    if (typeof isActive !== 'boolean') {
-      return NextResponse.json({ success: false, error: '과제 상태 값이 올바르지 않습니다.' }, { status: 400 });
+    if (bodyKeys.length === 1 && typeof body.isActive === 'boolean') {
+      await ref.update({
+        isActive: body.isActive,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return NextResponse.json({ success: true });
     }
 
-    await ref.update({
-      isActive,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    await assertAssignmentNotStarted(assignmentId);
 
-    return NextResponse.json({ success: true });
+    const updateData = buildUpdatedAssignmentData(snapshot.data(), body || {});
+    await ref.update(updateData);
+
+    const updatedSnapshot = await ref.get();
+
+    return NextResponse.json({
+      success: true,
+      assignment: serializeDoc(updatedSnapshot),
+    });
   } catch (error) {
     if (error instanceof RequestError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }
 
     console.error('Assignment detail PATCH error:', error);
-    return NextResponse.json({ success: false, error: '과제 상태를 변경하지 못했습니다.' }, { status: 500 });
+    return NextResponse.json({ success: false, error: '과제를 수정하지 못했습니다.' }, { status: 500 });
   }
 }
 
