@@ -4,17 +4,25 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
+import {
+  getArtReferenceLabel,
+  getStudentFacingArtAttribution,
+  getStudentFacingArtTitle,
+} from '@/lib/artAssignment';
 import { formatStudentMessageByteRange, getUtf8ByteLength } from '@/lib/chatConstraints';
 import { getStudentMessageCount } from '@/lib/conversationState';
 import { getAssignmentMaxScore } from '@/lib/scoreConfig';
 
 function buildWelcomeMessage(assignment) {
   if (assignment?.type === 'art') {
-    const paintingTitle = assignment.paintingTitle || assignment.title;
-    const artist = assignment.artist ? ` (${assignment.artist}${assignment.year ? ', ' + assignment.year : ''})` : '';
+    const paintingTitle = assignment.paintingTitle?.trim();
+    const attribution = getStudentFacingArtAttribution(assignment);
+    const artworkIntro = paintingTitle
+      ? `오늘은 **"${paintingTitle}"${attribution ? ` (${attribution})` : ''}**을 함께 감상할 거야.`
+      : '오늘은 그림 한 점을 함께 감상할 거야.';
     return {
       role: 'unicorn',
-      content: `안녕! 나는 미술 유니콘이야. 🎨\n\n오늘은 **"${paintingTitle}"${artist}**을 함께 감상할 거야.\n그림을 천천히 살펴보고, 눈에 띄는 것부터 자유롭게 말해 줘!`,
+      content: `안녕! 나는 미술 유니콘이야. 🎨\n\n${artworkIntro}\n그림을 천천히 살펴보고, 눈에 띄는 것부터 자유롭게 말해 줘!`,
     };
   }
   return {
@@ -54,6 +62,18 @@ export default function ChatPage() {
 
   const isArt = assignment?.type === 'art';
   const hasArtReference = isArt && Boolean(assignment?.imageUrl);
+  const studentFacingArtTitle = useMemo(
+    () => (isArt ? getStudentFacingArtTitle(assignment) : ''),
+    [assignment, isArt]
+  );
+  const artReferenceLabel = useMemo(
+    () => (isArt ? getArtReferenceLabel(assignment) : ''),
+    [assignment, isArt]
+  );
+  const studentFacingArtAttribution = useMemo(
+    () => (isArt ? getStudentFacingArtAttribution(assignment) : ''),
+    [assignment, isArt]
+  );
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
   const inputByteLength = useMemo(() => getUtf8ByteLength(input), [input]);
   const byteRangeLabel = useMemo(
@@ -343,7 +363,7 @@ export default function ChatPage() {
             }}>
               <img
                 src={assignment.imageUrl}
-                alt={assignment.paintingTitle || assignment.title}
+                alt={artReferenceLabel}
                 style={{
                   width: '100%',
                   maxHeight: '420px',
@@ -358,9 +378,8 @@ export default function ChatPage() {
                 padding: '0.75rem 1rem',
                 fontWeight: 500,
               }}>
-                {assignment.paintingTitle || assignment.title}
-                {assignment.artist ? ` · ${assignment.artist}` : ''}
-                {assignment.year ? ` (${assignment.year})` : ''}
+                {artReferenceLabel}
+                {studentFacingArtAttribution ? ` · ${studentFacingArtAttribution}` : ''}
               </p>
             </div>
           )}
@@ -386,7 +405,7 @@ export default function ChatPage() {
           <div className="chat-header-info">
             <h2>유니콘과 대화 중</h2>
             <p>
-              {assignment.title} · {studentCode}번 학생
+              {isArt ? studentFacingArtTitle : assignment.title} · {studentCode}번 학생
             </p>
           </div>
           {!finished && turnInfo.max > 0 && (
@@ -436,7 +455,7 @@ export default function ChatPage() {
             >
               <img
                 src={assignment.imageUrl}
-                alt={assignment.paintingTitle || assignment.title}
+                alt={artReferenceLabel}
                 style={{
                   width: '100%',
                   maxHeight: showImagePanel ? '280px' : '72px',
@@ -453,7 +472,7 @@ export default function ChatPage() {
                 margin: 0,
               }}>
                 {showImagePanel
-                  ? `${assignment.paintingTitle || assignment.title}${assignment.artist ? ` · ${assignment.artist}` : ''} — 탭하면 축소`
+                  ? `${artReferenceLabel}${studentFacingArtAttribution ? ` · ${studentFacingArtAttribution}` : ''} — 탭하면 축소`
                   : '🖼️ 탭하면 그림 확대'}
               </p>
             </div>
@@ -581,7 +600,7 @@ export default function ChatPage() {
               <div className="art-reference-card-header">
                 <div>
                   <div className="art-reference-eyebrow">Artwork Reference</div>
-                  <h3>{assignment.paintingTitle || assignment.title}</h3>
+                  <h3>{artReferenceLabel}</h3>
                 </div>
                 <button
                   type="button"
@@ -596,16 +615,15 @@ export default function ChatPage() {
               <div className="art-reference-image-wrap">
                 <img
                   src={assignment.imageUrl}
-                  alt={assignment.paintingTitle || assignment.title}
+                  alt={artReferenceLabel}
                   className="art-reference-image"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               </div>
 
               <p className="art-reference-caption">
-                {assignment.paintingTitle || assignment.title}
-                {assignment.artist ? ` · ${assignment.artist}` : ''}
-                {assignment.year ? ` (${assignment.year})` : ''}
+                {artReferenceLabel}
+                {studentFacingArtAttribution ? ` · ${studentFacingArtAttribution}` : ''}
               </p>
             </div>
           </aside>

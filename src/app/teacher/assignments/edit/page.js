@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 
+import { buildArtAssignmentContent, buildArtAssignmentTitle } from '@/lib/artAssignment';
 import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { hasStudentStartedConversation } from '@/lib/conversationState';
 import { auth } from '@/lib/firebase';
@@ -219,22 +220,15 @@ function EditAssignmentPageContent() {
       return;
     }
 
-    if (isArt && (!form.paintingTitle.trim() || !form.artist.trim())) {
-      alert('작품명과 작가를 입력해 주세요.');
-      return;
-    }
-
     setSaving(true);
 
     try {
       const payload = {
-        title: isArt
-          ? (form.title.trim() || `${form.paintingTitle.trim()} - ${form.artist.trim()}`)
-          : form.title.trim(),
+        title: isArt ? buildArtAssignmentTitle(form) : form.title.trim(),
         subject: form.subject.trim(),
         grade: form.grade.trim(),
         learningObjective: form.learningObjective.trim(),
-        content: form.content.trim(),
+        content: isArt ? buildArtAssignmentContent(form) : form.content.trim(),
         keywords: splitCsv(form.keywords),
         standards: splitCsv(form.standards),
         scoreOptions: parsedScoreOptions.scoreOptions,
@@ -425,26 +419,28 @@ function EditAssignmentPageContent() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
-                    <label className="form-label">작품명</label>
+                    <label className="form-label">작품명 (선택)</label>
                     <input
                       type="text"
                       className="form-input"
                       value={form.paintingTitle}
                       onChange={handleChange('paintingTitle')}
-                      required
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">작가</label>
+                    <label className="form-label">작가 (선택)</label>
                     <input
                       type="text"
                       className="form-input"
                       value={form.artist}
                       onChange={handleChange('artist')}
-                      required
                     />
                   </div>
                 </div>
+
+                <p className="form-hint" style={{ marginBottom: '1rem' }}>
+                  작품명과 작가를 비워 두면 학생 화면에서는 작품 정보를 먼저 드러내지 않고 감상만 시작할 수 있습니다.
+                </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">

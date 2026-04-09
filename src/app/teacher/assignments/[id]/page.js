@@ -354,13 +354,13 @@ export default function AssignmentDetail() {
     setActionLoading(null);
   };
 
-  const handleReset = async (conversation) => {
+  const handleDeleteConversation = async (conversation) => {
     if (!canResetConversation(conversation)) {
-      alert('승인 중이거나 이미 승인된 제출은 리셋할 수 없습니다.');
+      alert('승인 중이거나 이미 승인된 제출은 삭제할 수 없습니다.');
       return;
     }
 
-    if (!confirm(`${conversation.studentCode}번 학생 기록을 삭제하고 다시 참여하게 할까요?`)) {
+    if (!confirm(`${conversation.studentCode}번 학생 제출 기록을 삭제할까요?\n삭제 후 다시 입장하면 새 답변으로 시작합니다.`)) {
       return;
     }
 
@@ -377,14 +377,14 @@ export default function AssignmentDetail() {
       const data = await response.json();
 
       if (!data.success) {
-        alert(data.error || '리셋에 실패했습니다.');
+        alert(data.error || '삭제에 실패했습니다.');
       }
 
       setSelectedConv(null);
       await loadData();
     } catch (error) {
-      console.error('Reset error:', error);
-      alert('리셋 중 오류가 발생했습니다.');
+      console.error('Delete conversation error:', error);
+      alert('삭제 중 오류가 발생했습니다.');
       await loadData();
     }
 
@@ -831,10 +831,11 @@ export default function AssignmentDetail() {
                             {canResetConversation(conversation) && (
                               <button
                                 className="btn btn-danger btn-sm"
-                                onClick={() => handleReset(conversation)}
+                                onClick={() => handleDeleteConversation(conversation)}
                                 disabled={actionLoading === conversation.id}
+                                title="삭제"
                               >
-                                리셋
+                                삭제
                               </button>
                             )}
                           </div>

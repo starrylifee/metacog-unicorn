@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
+import { getArtPromptPaintingInfoLines } from '@/lib/artAssignment';
 import { CHAT_SESSION_COOKIE, hashChatSessionToken } from '@/lib/chatSession';
 import { getUtf8ByteLength, normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import {
@@ -111,11 +112,7 @@ function buildArtSystemPrompt(assignment, options = {}) {
   const maxScore = getAssignmentMaxScore(assignment);
   const lowestScore = getLowestAllowedScore(scoreOptions);
 
-  const paintingInfo = [
-    `작품명: ${assignment.paintingTitle || assignment.title}`,
-    assignment.artist ? `작가: ${assignment.artist}` : null,
-    assignment.year ? `제작 연도: ${assignment.year}` : null,
-  ].filter(Boolean).join('\n');
+  const paintingInfo = getArtPromptPaintingInfoLines(assignment).join('\n') || '?묓뭹 ?뺣낫媛 誘몃━ 怨듦컻?섏? ?딆븯?듬땲??';
 
   const paintingKnowledge = assignment.paintingContext
     ? `\n=== 이 작품에 대한 배경 지식 (학생에게 직접 알려주지 말고, 대화를 이끌 때 참고만 해) ===\n${assignment.paintingContext}`
@@ -342,11 +339,10 @@ function buildForcedFinalEvaluationPrompt(assignment) {
   const maxScore = getAssignmentMaxScore(assignment);
 
   if (assignment.type === 'art') {
-    const paintingInfo = [
-      `- 작품명: ${assignment.paintingTitle || assignment.title}`,
-      assignment.artist ? `- 작가: ${assignment.artist}` : null,
-      assignment.year ? `- 제작 연도: ${assignment.year}` : null,
-    ].filter(Boolean).join('\n');
+    const paintingInfo =
+      getArtPromptPaintingInfoLines(assignment)
+        .map((line) => `- ${line}`)
+        .join('\n') || '- 작품 정보 비공개';
 
     return `너는 미술 감상 대화의 최종 채점기다.
 반드시 JSON 객체만 출력하고, 마크다운이나 코드블록은 쓰지 마.

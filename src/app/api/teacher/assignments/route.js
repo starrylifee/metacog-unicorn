@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { buildArtAssignmentContent, buildArtAssignmentTitle } from '@/lib/artAssignment';
 import { generateUniqueEntryCode } from '@/lib/assignmentEntryCode';
 import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { authenticateFirebaseRequest, RequestError } from '@/lib/serverAuth';
@@ -74,7 +75,12 @@ export async function POST(request) {
       maxStudentMessageBytes,
     });
 
-    if (!title.trim()) {
+    const normalizedTitle =
+      type === 'art'
+        ? buildArtAssignmentTitle({ title, paintingTitle, artist })
+        : title.trim();
+
+    if (type !== 'art' && !normalizedTitle) {
       return NextResponse.json(
         { success: false, error: '과제 제목을 입력해 주세요.' },
         { status: 400 }
@@ -110,11 +116,14 @@ export async function POST(request) {
       teacherId: teacher.uid,
       entryCode,
       type,
-      title: title.trim(),
+      title: normalizedTitle,
       subject: subject.trim(),
       grade: grade.trim(),
       learningObjective: learningObjective.trim(),
-      content: content.trim(),
+      content:
+        type === 'art'
+          ? content.trim() || buildArtAssignmentContent({ paintingTitle, artist, year })
+          : content.trim(),
       keywords: Array.isArray(keywords)
         ? keywords.map((keyword) => String(keyword).trim()).filter(Boolean)
         : [],

@@ -279,14 +279,14 @@ export async function DELETE(request) {
 
     if (conv.approved) {
       return NextResponse.json(
-        { success: false, error: '이미 승인된 제출은 리셋할 수 없습니다.' },
+        { success: false, error: '이미 승인된 제출은 삭제할 수 없습니다.' },
         { status: 409 }
       );
     }
 
     if (conv.approvalStatus === 'processing') {
       return NextResponse.json(
-        { success: false, error: '현재 승인 처리 중인 제출은 리셋할 수 없습니다.' },
+        { success: false, error: '현재 승인 처리 중인 제출은 삭제할 수 없습니다.' },
         { status: 409 }
       );
     }
@@ -295,14 +295,14 @@ export async function DELETE(request) {
 
     return NextResponse.json({
       success: true,
-      message: '리셋이 완료되었습니다. 학생이 다시 참여할 수 있습니다.',
+      message: '삭제가 완료되었습니다. 학생이 다시 참여할 수 있습니다.',
     });
   } catch (error) {
     if (error instanceof RequestError) {
       return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }
 
-    console.error('Reset error:', error);
+    console.error('Delete conversation error:', error);
     return NextResponse.json({ success: false, error: '서버 오류' }, { status: 500 });
   }
 }

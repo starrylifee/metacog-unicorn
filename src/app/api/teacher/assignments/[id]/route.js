@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { buildArtAssignmentContent, buildArtAssignmentTitle } from '@/lib/artAssignment';
 import { generateUniqueEntryCode } from '@/lib/assignmentEntryCode';
 import { normalizeAssignmentConstraints } from '@/lib/chatConstraints';
 import { hasStudentStartedConversation } from '@/lib/conversationState';
@@ -127,10 +128,13 @@ async function duplicateAssignment(assignmentId, assignment, teacherUid) {
 
 function buildUpdatedAssignmentData(existingAssignment, payload) {
   const type = existingAssignment.type === 'art' ? 'art' : 'math';
-  const normalizedConstraints = normalizeAssignmentConstraints({
+  const mergedAssignment = {
     ...existingAssignment,
     ...payload,
     type,
+  };
+  const normalizedConstraints = normalizeAssignmentConstraints({
+    ...mergedAssignment,
   });
   const validatedScoreOptions = validateScoreOptions(payload.scoreOptions);
 
@@ -138,12 +142,19 @@ function buildUpdatedAssignmentData(existingAssignment, payload) {
     throw new RequestError(validatedScoreOptions.error, 400);
   }
 
-  const title = String(payload.title || '').trim();
-  if (!title) {
+  const title =
+    type === 'art'
+      ? buildArtAssignmentTitle(mergedAssignment)
+      : String(payload.title || '').trim();
+
+  if (type !== 'art' && !title) {
     throw new RequestError('과제 제목을 입력해 주세요.', 400);
   }
 
-  const content = String(payload.content || '').trim();
+  const content =
+    type === 'art'
+      ? String(payload.content || '').trim() || buildArtAssignmentContent(mergedAssignment)
+      : String(payload.content || '').trim();
   if (type !== 'art' && !content) {
     throw new RequestError('수업 내용을 입력해 주세요.', 400);
   }
@@ -169,10 +180,6 @@ function buildUpdatedAssignmentData(existingAssignment, payload) {
   if (type === 'art') {
     const paintingTitle = String(payload.paintingTitle || '').trim();
     const artist = String(payload.artist || '').trim();
-
-    if (!paintingTitle || !artist) {
-      throw new RequestError('작품명과 작가를 입력해 주세요.', 400);
-    }
 
     updateData.paintingTitle = paintingTitle;
     updateData.artist = artist;

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 
+import { buildArtAssignmentContent, buildArtAssignmentTitle } from '@/lib/artAssignment';
 import { auth } from '@/lib/firebase';
 import { createAssignment, getTeacherSettings } from '@/lib/firestore';
 import {
@@ -138,17 +139,11 @@ export default function NewArtAssignment() {
     setForm((prev) => ({ ...prev, scoreOptionsInput: formatScoreOptions(values) }));
   };
 
-  const autoTitle = useMemo(() => {
-    if (form.paintingTitle && form.artist) {
-      return `${form.paintingTitle} - ${form.artist}`;
-    }
-    return form.paintingTitle || '';
-  }, [form.paintingTitle, form.artist]);
+  const suggestedTitle = useMemo(() => buildArtAssignmentTitle(form), [form]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!form.paintingTitle.trim() || !form.artist.trim()) return;
     if (!parsedScoreOptions.ok) {
       alert(parsedScoreOptions.error);
       return;
@@ -162,7 +157,7 @@ export default function NewArtAssignment() {
     try {
       const result = await createAssignment(user.uid, {
         type: 'art',
-        title: form.title.trim() || autoTitle,
+        title: buildArtAssignmentTitle(form),
         subject: '미술',
         grade: '',
         paintingTitle: form.paintingTitle.trim(),
@@ -177,7 +172,7 @@ export default function NewArtAssignment() {
         difficultyLabel: difficultyInfo?.label || '',
         difficultyPrompt: difficultyInfo?.prompt || '',
         learningObjective: `${appreciationInfo?.label} 감상 · ${difficultyInfo?.label}`,
-        content: `명화 감상 과제: ${form.paintingTitle} (${form.artist}${form.year ? ', ' + form.year : ''})`,
+        content: buildArtAssignmentContent(form),
         keywords: [],
         standards: [],
         scoreOptions: parsedScoreOptions.scoreOptions,
@@ -273,7 +268,7 @@ export default function NewArtAssignment() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label">작품명 *</label>
+                <label className="form-label">작품명 (선택)</label>
                 <input
                   id="input-painting-title"
                   type="text"
@@ -281,11 +276,10 @@ export default function NewArtAssignment() {
                   placeholder="예: 별이 빛나는 밤"
                   value={form.paintingTitle}
                   onChange={handleChange('paintingTitle')}
-                  required
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">작가 *</label>
+                <label className="form-label">작가 (선택)</label>
                 <input
                   id="input-artist"
                   type="text"
@@ -293,10 +287,13 @@ export default function NewArtAssignment() {
                   placeholder="예: 빈센트 반 고흐"
                   value={form.artist}
                   onChange={handleChange('artist')}
-                  required
                 />
               </div>
             </div>
+
+            <p className="form-hint" style={{ marginBottom: '1rem' }}>
+              작품명과 작가를 비워 두면 학생 화면에서는 작품 정보를 먼저 드러내지 않고 감상만 시작할 수 있습니다.
+            </p>
 
             <div className="form-group">
               <label className="form-label">제작 연도 (선택)</label>
@@ -370,11 +367,11 @@ export default function NewArtAssignment() {
               id="input-title"
               type="text"
               className="form-input"
-              placeholder={autoTitle || '예: 별이 빛나는 밤 - 반 고흐'}
+              placeholder={suggestedTitle || '예: 4월 감상 과제'}
               value={form.title}
               onChange={handleChange('title')}
             />
-            <p className="form-hint">비워두면 "작품명 - 작가"로 자동 설정됩니다.</p>
+            <p className="form-hint">비워두면 교사용 제목이 자동으로 정해지고, 학생 화면에는 작품명이 없을 때 일반적인 제목만 보입니다.</p>
           </div>
 
           {/* 감상 단계 */}
@@ -528,7 +525,7 @@ export default function NewArtAssignment() {
           </div>
 
           {/* 설정 요약 */}
-          {form.paintingTitle && form.artist && (
+          {(form.paintingTitle || form.artist || form.title) && (
             <div
               style={{
                 marginBottom: '1.5rem', padding: '1rem 1.25rem',
@@ -658,7 +655,7 @@ export default function NewArtAssignment() {
             type="submit"
             className="btn btn-primary btn-large"
             style={{ width: '100%' }}
-            disabled={saving || !form.paintingTitle.trim() || !form.artist.trim() || !parsedScoreOptions.ok}
+            disabled={saving || !parsedScoreOptions.ok}
           >
             {saving ? '생성 중...' : '🎨 명화 감상 과제 생성하기'}
           </button>
