@@ -52,6 +52,8 @@ export default function ChatPage() {
   const [score, setScore] = useState(null);
   const [feedback, setFeedback] = useState('');
   const [nextStepTip, setNextStepTip] = useState('');
+  const [retryUsed, setRetryUsed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState('');
   const [showImagePanel, setShowImagePanel] = useState(false);
@@ -75,6 +77,10 @@ export default function ChatPage() {
     [assignment, isArt]
   );
   const maxScore = useMemo(() => (assignment ? getAssignmentMaxScore(assignment) : null), [assignment]);
+  const retryEligible = useMemo(() => {
+    if (!finished || !Number.isFinite(score) || !Number.isFinite(maxScore) || retryUsed) return false;
+    return score * 2 < maxScore;
+  }, [finished, score, maxScore, retryUsed]);
   const inputByteLength = useMemo(() => getUtf8ByteLength(input), [input]);
   const byteRangeLabel = useMemo(
     () => formatStudentMessageByteRange(assignment?.minStudentMessageBytes, assignment?.maxStudentMessageBytes),
@@ -136,6 +142,8 @@ export default function ChatPage() {
       setScore(null);
       setFeedback('');
       setNextStepTip('');
+      setRetryUsed(false);
+      setRetrying(false);
       setMessages([]);
       setConversationId(null);
       setReadyToChat(false);
@@ -194,6 +202,7 @@ export default function ChatPage() {
             setFeedback(restoredConversation.feedback || '');
             setNextStepTip(restoredConversation.nextStepTip || restoredConversation.higherScoreTip || '');
           }
+          setRetryUsed(Boolean(restoredConversation?.retryUsed));
 
           // 복원된 대화에서 턴 정보 계산
           const restoredStudentTurns = getStudentMessageCount(restoredConversation);
@@ -221,6 +230,40 @@ export default function ChatPage() {
 
     void init();
   }, [code, studentCode]);
+
+  const handleRetry = async () => {
+    if (!assignment || !conversationId || retrying) return;
+    setRetrying(true);
+
+    try {
+      const resp = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentId: assignment.id,
+          studentCode,
+          retry: true,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        setConversationId(data.conversationId);
+        setFinished(false);
+        setScore(null);
+        setFeedback('');
+        setNextStepTip('');
+        setRetryUsed(true);
+        setMessages(buildInitialMessages(assignment, []));
+        setTurnInfo({ current: 0, max: assignment.maxTurns ?? 0, remaining: assignment.maxTurns ?? 0 });
+        if (isArt) setReadyToChat(false);
+      }
+    } catch (err) {
+      console.error('Retry error:', err);
+    }
+
+    setRetrying(false);
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || sending || finished || !conversationId || !assignment || inputLengthError) {
@@ -429,7 +472,7 @@ export default function ChatPage() {
               {turnInfo.current}/{turnInfo.max}턴
             </span>
           )}
-          {!isArt && Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
+          {Number.isFinite(score) && finished && <span className="badge badge-score">{score}점</span>}
         </div>
 
         <div className="chat-messages">
@@ -496,17 +539,22 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* 완료 카드: 미술은 점수 숨김, 수학은 기존대로 */}
+          {/* 완료 카드 */}
           {finished && (
             <div className="chat-bubble chat-bubble-system">
               <div className="score-display">
                 {isArt ? (
                   <>
                     <div className="score-label">🎨 오늘의 감상 완료!</div>
+                    {Number.isFinite(score) && (
+                      <div className="score-label" style={{ fontSize: '1.5rem', marginTop: '0.25rem' }}>
+                        {score}점{Number.isFinite(maxScore) ? ` / ${maxScore}점` : ''}
+                      </div>
+                    )}
                     {feedback && <div className="score-feedback">{feedback}</div>}
                     {nextStepTip && (
                       <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
-                        <strong>💡 다음에 해보면 좋을 것</strong> {nextStepTip}
+                        <strong>💡 {retryEligible ? '재도전 힌트' : '다음에 해보면 좋을 것'}</strong> {nextStepTip}
                       </div>
                     )}
                   </>
@@ -518,12 +566,24 @@ export default function ChatPage() {
                     {feedback && <div className="score-feedback">{feedback}</div>}
                     {nextStepTip && (
                       <div className="score-feedback" style={{ marginTop: '0.75rem' }}>
-                        <strong>💡 다음에 해보면 좋을 것</strong> {nextStepTip}
+                        <strong>💡 {retryEligible ? '재도전 힌트' : '다음에 해보면 좋을 것'}</strong> {nextStepTip}
                       </div>
                     )}
                   </>
                 )}
                 <div style={{ marginTop: '1rem' }}>
+                  {retryEligible && (
+                    <div style={{ marginBottom: '0.6rem' }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => void handleRetry()}
+                        disabled={retrying}
+                        style={{ width: '100%' }}
+                      >
+                        {retrying ? '준비 중...' : '🔄 한 번 더 도전하기'}
+                      </button>
+                    </div>
+                  )}
                   <Link href="/" className="btn btn-primary btn-sm">
                     처음으로
                   </Link>

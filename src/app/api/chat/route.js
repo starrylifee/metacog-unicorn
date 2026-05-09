@@ -177,7 +177,7 @@ ${assignment.difficultyPrompt || '쉬운 말로 질문하되 스스로 생각하
   · 4단계(판단)까지 도달 + 깊이 있는 감상: 최고점 ${maxScore}점
 - 같은 단계라도 더 구체적이고 자기만의 표현이 있으면 높은 점수를 줘.
 - 틀린 해석이라도 진지하게 자기 생각을 말했으면 그 깊이를 인정해.
-- 최저 ${lowestScore}점: 장난, 엉뚱한 답, 무관한 말, "몰라" 반복.
+- 최저 ${lowestScore}점: 그림과 완전히 무관한 장난이나 반복된 무의미한 말에만 써. 조금이라도 그림을 보고 자기 생각을 이야기했다면 ${lowestScore}점 대신 그 위 점수를 줘.
 
 === 마무리 형식 ===
 대화를 마무리할 때는 학생이 오늘 감상에서 발견한 것들을 따뜻하게 요약해 줘.
@@ -360,6 +360,7 @@ function buildForcedFinalEvaluationPrompt(assignment) {
 - feedback는 왜 그 점수를 주었는지 1~2문장으로 구체적으로 설명한다.
 - nextStepTip는 다음 그림 감상에서 바로 시도할 수 있는 한 가지를 제안한다.
 - 최고 점수는 ${maxScore}점이다.
+- 학생이 조금이라도 그림을 보고 자기 생각을 말했다면 0점을 주지 마라.
 
 작품 정보:
 ${paintingInfo}
@@ -383,7 +384,7 @@ ${paintingInfo}
 {"reply":"string","score":0,"feedback":"string","higherScoreTip":"string"}`;
 }
 
-async function createForcedFinalReply(assignment, conversationMessages) {
+async function createForcedFinalReply(assignment, conversationMessages, artPrimingMessages = []) {
   const isArt = assignment.type === 'art';
   const buildPrompt = isArt ? buildArtSystemPrompt : buildSystemPrompt;
   const { maxTurns } = normalizeAssignmentConstraints(assignment);
@@ -414,7 +415,7 @@ async function createForcedFinalReply(assignment, conversationMessages) {
 
   for (const attempt of attempts) {
     const reply = await createChatReply(
-      [{ role: 'system', content: attempt.systemPrompt }, ...conversationMessages],
+      [{ role: 'system', content: attempt.systemPrompt }, ...artPrimingMessages, ...conversationMessages],
       { temperature: attempt.temperature, maxTokens: attempt.maxTokens }
     );
     const parsed = extractCompletionData(reply, assignment);
@@ -429,6 +430,16 @@ async function createForcedFinalReply(assignment, conversationMessages) {
 
 async function createStructuredForcedFinalReply(assignment, conversationMessages) {
   const transcript = buildConversationTranscript(conversationMessages);
+  const imageUrl = typeof assignment?.imageUrl === 'string' ? assignment.imageUrl.trim() : '';
+  const hasImage = Boolean(imageUrl) && imageUrl.startsWith('http');
+
+  const evalUserContent = hasImage && assignment.type === 'art'
+    ? [
+        { type: 'text', text: '이 작품을 직접 확인하고 아래 대화를 평가해 주세요:' },
+        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'text', text: `\n아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}` },
+      ]
+    : `아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}`;
 
   const attempts = [
     { temperature: 0, maxTokens: 360 },
@@ -439,10 +450,7 @@ async function createStructuredForcedFinalReply(assignment, conversationMessages
     const reply = await createChatReply(
       [
         { role: 'system', content: buildForcedFinalEvaluationPrompt(assignment) },
-        {
-          role: 'user',
-          content: `아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}`,
-        },
+        { role: 'user', content: evalUserContent },
       ],
       {
         temperature: attempt.temperature,
@@ -460,10 +468,38 @@ async function createStructuredForcedFinalReply(assignment, conversationMessages
   return null;
 }
 
+function applyMinimumScore(score, scoreOptions, conversationMessages) {
+  if (!Number.isFinite(score) || score !== scoreOptions[0] || scoreOptions.length < 2) {
+    return score;
+  }
+  const totalStudentBytes = conversationMessages
+    .filter((m) => m.role === 'user')
+    .reduce((sum, m) => sum + getUtf8ByteLength(String(m.content || '')), 0);
+  return totalStudentBytes > 20 ? scoreOptions[1] : score;
+}
+
+function buildArtImagePrimingMessages(assignment) {
+  const imageUrl = typeof assignment?.imageUrl === 'string' ? assignment.imageUrl.trim() : '';
+  if (!imageUrl || !imageUrl.startsWith('http')) return [];
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '이것이 오늘 학생들이 감상하는 작품입니다. 잘 살펴봐 주세요.' },
+        { type: 'image_url', image_url: { url: imageUrl } },
+      ],
+    },
+    {
+      role: 'assistant',
+      content: '네, 작품을 확인했습니다. 학생과의 미술 감상 대화를 시작할게요.',
+    },
+  ];
+}
+
 function buildFallbackCompletion(assignment, partialReply = '') {
   const isArt = assignment.type === 'art';
   const scoreOptions = getAssignmentScoreOptions(assignment);
-  const fallbackScore = getLowestAllowedScore(scoreOptions);
+  const fallbackScore = scoreOptions.length >= 2 ? scoreOptions[1] : scoreOptions[0];
   const nextHigherScore = getNextHigherScore(scoreOptions, fallbackScore);
   const fallbackTip = isArt
     ? '다음에는 그림에서 가장 먼저 눈에 띈 부분 하나를 고르고, 왜 그렇게 느꼈는지 색이나 모양, 분위기를 붙여서 말해 보면 더 깊은 감상이 돼.'
@@ -587,7 +623,9 @@ export async function POST(request) {
       { role: 'user', content: userMessage },
     ];
 
-    const systemPrompt = assignment.type === 'art'
+    const artPrimingMessages = isArt ? buildArtImagePrimingMessages(assignment) : [];
+
+    const systemPrompt = isArt
       ? buildArtSystemPrompt(assignment, { shouldForceFinish, allowFinish, maxTurns: effectiveMaxTurns })
       : buildSystemPrompt(assignment, { shouldForceFinish, allowFinish, maxTurns: effectiveMaxTurns });
 
@@ -595,6 +633,7 @@ export async function POST(request) {
       await createChatReply(
         [
           { role: 'system', content: systemPrompt },
+          ...artPrimingMessages,
           ...conversationMessages,
         ],
         { temperature: shouldForceFinish ? 0.35 : 0.7, maxTokens: 650 }
@@ -616,7 +655,7 @@ export async function POST(request) {
     if (shouldForceFinish && !parsedReply.finished) {
       const forcedFinalReply =
         await createStructuredForcedFinalReply(assignment, conversationMessages) ||
-        await createForcedFinalReply(assignment, conversationMessages);
+        await createForcedFinalReply(assignment, conversationMessages, artPrimingMessages);
       if (forcedFinalReply) {
         parsedReply = forcedFinalReply;
       }
@@ -629,6 +668,11 @@ export async function POST(request) {
         assignmentType: assignment.type || 'math',
       });
       parsedReply = buildFallbackCompletion(assignment, parsedReply.reply);
+    }
+
+    const scoreOptions = getAssignmentScoreOptions(assignment);
+    if (parsedReply.finished && Number.isFinite(parsedReply.score)) {
+      parsedReply = { ...parsedReply, score: applyMinimumScore(parsedReply.score, scoreOptions, conversationMessages) };
     }
 
     const { reply, finished, score, feedback, higherScoreTip, nextStepTip, reachedStage } = parsedReply;

@@ -7,6 +7,12 @@ import {
 } from '@/lib/chatSession';
 import { getStudentMessageCount } from '@/lib/conversationState';
 import { FieldValue, adminDb } from '@/lib/serverDb';
+import { getAssignmentMaxScore } from '@/lib/scoreConfig';
+
+function isLowScoreForRetry(score, assignmentData) {
+  const maxScore = getAssignmentMaxScore(assignmentData);
+  return Number.isFinite(Number(score)) && Number(score) * 2 < maxScore;
+}
 
 function serializeConversation(doc) {
   const data = doc.data();
@@ -24,6 +30,7 @@ function serializeConversation(doc) {
     status: data.status || 'in_progress',
     approved: Boolean(data.approved),
     approvalStatus: data.approvalStatus || null,
+    retryUsed: Boolean(data.retryUsed),
   };
 }
 
@@ -40,7 +47,7 @@ function applyConversationCookie(response, sessionToken) {
 
 export async function POST(request) {
   try {
-    const { assignmentId, studentCode } = await request.json();
+    const { assignmentId, studentCode, retry } = await request.json();
     const normalizedStudentCode = Number(studentCode);
 
     if (
@@ -106,6 +113,34 @@ export async function POST(request) {
           conversationId: existingDoc.id,
           conversation: serializeConversation(existingDoc),
         });
+      }
+
+      if (retry && !existing.retryUsed && isLowScoreForRetry(existing.score, assignmentSnap.data())) {
+        const newSessionToken = createChatSessionToken();
+        await existingDoc.ref.update({
+          messages: [],
+          studentMessageCount: 0,
+          score: null,
+          feedback: null,
+          higherScoreTip: null,
+          nextStepTip: null,
+          reachedStage: null,
+          status: 'in_progress',
+          sessionTokenHash: hashChatSessionToken(newSessionToken),
+          retryUsed: true,
+          previousScore: existing.score,
+          completedAt: null,
+        });
+
+        return applyConversationCookie(
+          NextResponse.json({
+            success: true,
+            resumed: false,
+            conversationId: existingDoc.id,
+            isRetry: true,
+          }),
+          newSessionToken
+        );
       }
 
       return NextResponse.json({
