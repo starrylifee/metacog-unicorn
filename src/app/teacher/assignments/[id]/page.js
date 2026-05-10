@@ -64,6 +64,7 @@ export default function AssignmentDetail() {
   const [actionLoading, setActionLoading] = useState(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showEntryCodeFloat, setShowEntryCodeFloat] = useState(false);
 
   const scoreOptions = useMemo(
     () => (assignment ? getAssignmentScoreOptions(assignment) : []),
@@ -544,7 +545,19 @@ export default function AssignmentDetail() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
               {assignment.subject ? `${assignment.subject} · ` : ''}
               {assignment.grade ? `${assignment.grade} · ` : ''}
-              입장코드: <strong style={{ color: 'var(--cyan-primary)', letterSpacing: '0.1em' }}>{assignment.entryCode}</strong>
+              입장코드:{' '}
+              <strong
+                style={{
+                  color: 'var(--cyan-primary)',
+                  letterSpacing: '0.1em',
+                  cursor: 'pointer',
+                  textDecoration: 'underline dotted',
+                }}
+                onClick={() => setShowEntryCodeFloat((v) => !v)}
+                title="클릭하면 크게 표시됩니다"
+              >
+                {assignment.entryCode}
+              </strong>
             </p>
             {scoreScaleLabel && (
               <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
@@ -786,7 +799,9 @@ export default function AssignmentDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {conversations.map((conversation) => {
+                  {[...conversations]
+                    .sort((a, b) => Number(a.studentCode) - Number(b.studentCode))
+                    .map((conversation) => {
                     const status = getStatusLabel(conversation);
                     const isSelected = selectedConv?.id === conversation.id;
 
@@ -903,6 +918,50 @@ export default function AssignmentDetail() {
           </>
         )}
       </div>
+
+      {showEntryCodeFloat && (
+        <div
+          style={{
+            position: 'fixed',
+            right: '1.5rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'var(--bg-card, #1e1e2e)',
+            border: '2px solid var(--cyan-primary, #22d3ee)',
+            borderRadius: '1.25rem',
+            padding: '2rem 2.5rem',
+            zIndex: 9999,
+            textAlign: 'center',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            minWidth: '220px',
+          }}
+        >
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+            입장코드
+          </p>
+          <p
+            style={{
+              fontSize: '3rem',
+              fontWeight: 'bold',
+              color: 'var(--cyan-primary, #22d3ee)',
+              letterSpacing: '0.25em',
+              lineHeight: 1.2,
+              marginBottom: '0.25rem',
+            }}
+          >
+            {assignment.entryCode}
+          </p>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+            {assignment.title}
+          </p>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowEntryCodeFloat(false)}
+          >
+            닫기
+          </button>
+        </div>
+      )}
     </div>
   );
 }
