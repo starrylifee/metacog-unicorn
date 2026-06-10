@@ -95,12 +95,13 @@ ${buildScoringStyleGuidance(scoreOptions, scoringStyle)}
 대화를 마무리할 때는 학생에게 자연스럽게 한두 문장으로 말한 뒤, 마지막 줄들에 아래 형식을 정확히 넣어.
 [SCORE:X]
 [FEEDBACK:현재 점수를 준 이유를 1~2문장으로 설명]
-[HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말이나 이유나 예시를 더 말했어야 했는지 1~2문장으로 구체적으로 설명. 이미 최고점이면 '이미 최고 점수야.'라고 써.]
+[HIGHER_SCORE_TIP:더 높은 다음 점수를 받으려면 어떤 말이나 이유나 예시를 더 말했어야 했는지 1~2문장으로 구체적으로 설명. 학생이 그대로 참고할 수 있는 예시 문장을 큰따옴표 안에 1개 포함해. 이미 최고점이면 '이미 최고 점수야.'라고 써.]
 
 === 중요 ===
 - 학생 발화 기회는 최대 ${maxTurns}번이야.
 - ${maxTurns}번째 학생 답변 뒤에는 반드시 마무리해야 해.
 - HIGHER_SCORE_TIP에는 막연한 조언 말고, 학생이 실제로 어떤 내용을 더 말했어야 하는지 써.
+- 최고점이 아니라면 HIGHER_SCORE_TIP에 "예시 답변 문장"을 반드시 큰따옴표로 넣어. 예: "분수는 전체를 똑같이 나눈 것 중 몇 부분인지 나타내는 수야."
 - HIGHER_SCORE_TIP도 오늘 수업 범위를 벗어나면 안 돼.
 - 학생이 "모르겠어"처럼 짧게 답해도 남은 내용으로 평가하고 마무리해.
 - ${shouldForceFinish ? '이번 응답은 마지막 응답이야. 질문하지 말고 바로 마무리해.' : allowFinish ? '학생이 충분히 설명했거나 턴이 거의 다 찼다면 더 캐묻지 말고 종료해.' : `아직 학생 답변이 충분히 쌓이지 않았어. [SCORE], [FEEDBACK], [HIGHER_SCORE_TIP] 태그를 절대 사용하지 말고, 핵심이 부족한 부분을 한두 가지만 짧게 더 물어봐.`}`;
@@ -218,7 +219,7 @@ ${assignment.difficultyPrompt || '쉬운 말로 질문하되 스스로 생각하
 [SCORE:X]
 [REACHED_STAGE:도달한 가장 높은 단계 번호(1~4)]
 [FEEDBACK:X점을 준 이유를 구체적으로. 예: "4단계까지 도달했어. 색과 분위기를 관찰하고, 작가의 즐거운 추억을 상상했으며, 모두가 함께 운동하는 모습이 좋다는 판단을 그림 속 근거와 연결했기 때문에 높은 점수를 주었어." 아직 4단계가 아니면 어떤 판단과 근거가 부족했는지 설명해.]
-[NEXT_STEP_TIP:다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도를 구체적으로 제안. 최고점이면 '정말 깊이 있는 감상이었어!']
+[NEXT_STEP_TIP:다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도를 구체적으로 제안. 최고점이 아니라면 점수가 더 오를 수 있었던 학생 답변 예시를 큰따옴표 안에 1개 포함해. 최고점이면 '정말 깊이 있는 감상이었어!']
 
 === 중요 ===
 - 학생 발화 기회는 최대 ${maxTurns}번이야.
@@ -403,6 +404,8 @@ function buildForcedFinalEvaluationPrompt(assignment) {
 - reply는 학생에게 보내는 2~4문장 마무리 말이다. 질문형으로 끝내지 마.
 - feedback는 왜 그 점수를 주었는지 1~2문장으로 구체적으로 설명한다.
 - nextStepTip는 다음 그림 감상에서 바로 시도할 수 있는 한 가지를 제안한다.
+- 최고점이 아니라면 nextStepTip에 학생이 그대로 참고할 수 있는 예시 답변 문장을 큰따옴표 안에 1개 포함한다.
+- 예: "밝은 색과 웃는 표정 때문에 가족이 함께하는 즐거움이 잘 느껴져서 좋은 작품이라고 생각해."
 - 최고 점수는 ${maxScore}점이다.
 - 학생이 조금이라도 그림을 보고 자기 생각을 말했다면 0점을 주지 마라.
 
@@ -422,6 +425,7 @@ ${paintingInfo}
 - reply는 학생에게 보내는 2~4문장 마무리 말이다. 질문형으로 끝내지 마.
 - feedback는 왜 그 점수를 주었는지 1~2문장으로 설명한다.
 - higherScoreTip는 다음 점수를 받으려면 무엇을 더 말했어야 하는지 구체적으로 적는다.
+- 최고점이 아니라면 higherScoreTip에 학생이 그대로 참고할 수 있는 예시 답변 문장을 큰따옴표 안에 1개 포함한다.
 - 최고 점수는 ${maxScore}점이다.
 
 반드시 아래 형태의 JSON만 출력해.
@@ -434,7 +438,9 @@ async function createForcedFinalReply(assignment, conversationMessages, artPrimi
   const { maxTurns } = normalizeAssignmentConstraints(assignment);
   const reachedStageTag = isArt ? '\n[REACHED_STAGE:도달한 가장 높은 단계 번호(1~4)]' : '';
   const tipTag = isArt ? 'NEXT_STEP_TIP' : 'HIGHER_SCORE_TIP';
-  const tipDesc = isArt ? '다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도' : '더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지';
+  const tipDesc = isArt
+    ? '다음에 그림을 볼 때 스스로 해볼 수 있는 질문이나 시도. 최고점이 아니라면 점수가 더 오를 수 있었던 학생 답변 예시를 큰따옴표 안에 1개 포함'
+    : '더 높은 다음 점수를 받으려면 어떤 말을 더 했어야 하는지. 최고점이 아니라면 학생 답변 예시를 큰따옴표 안에 1개 포함';
 
   const attempts = [
     {
@@ -546,10 +552,10 @@ function buildFallbackCompletion(assignment, partialReply = '') {
   const fallbackScore = scoreOptions.length >= 2 ? scoreOptions[1] : scoreOptions[0];
   const nextHigherScore = getNextHigherScore(scoreOptions, fallbackScore);
   const fallbackTip = isArt
-    ? '다음에는 그림에서 가장 먼저 눈에 띈 부분 하나를 고르고, 왜 그렇게 느꼈는지 색이나 모양, 분위기를 붙여서 말해 보면 더 깊은 감상이 돼.'
+    ? '다음에는 그림에서 가장 먼저 눈에 띈 부분 하나를 고르고, 왜 그렇게 느꼈는지 색이나 모양, 분위기를 붙여서 말해 보면 더 깊은 감상이 돼. 예를 들면 "밝은 색과 웃는 표정 때문에 가족이 함께하는 즐거움이 잘 느껴져."처럼 말할 수 있어.'
     : nextHigherScore === null
       ? '이미 최고 점수야.'
-      : `${nextHigherScore}점을 받으려면 장난이나 짧은 답으로 끝내지 말고, 오늘 배운 핵심이 무엇인지와 왜 그런지 또는 어떤 예시가 있는지 함께 설명해 줘.`;
+      : `${nextHigherScore}점을 받으려면 장난이나 짧은 답으로 끝내지 말고, 오늘 배운 핵심이 무엇인지와 왜 그런지 또는 어떤 예시가 있는지 함께 설명해 줘. 예를 들면 "오늘 배운 핵심은 ~이고, 그 이유는 ~이기 때문이야."처럼 말할 수 있어.`;
 
   return {
     finished: true,
