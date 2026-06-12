@@ -65,6 +65,7 @@ export default function AssignmentDetail() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showEntryCodeFloat, setShowEntryCodeFloat] = useState(false);
+  const [showArtworkModal, setShowArtworkModal] = useState(false);
 
   const scoreOptions = useMemo(
     () => (assignment ? getAssignmentScoreOptions(assignment) : []),
@@ -584,19 +585,17 @@ export default function AssignmentDetail() {
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             {assignment.type === 'art' && assignment.imageUrl && (
-              <a
-                href={assignment.imageUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
                 className="btn btn-secondary btn-sm"
+                onClick={() => setShowArtworkModal(true)}
                 title={
                   assignment.paintingTitle
                     ? `${assignment.paintingTitle}${assignment.artist ? ` · ${assignment.artist}` : ''}`
-                    : '감상 작품 이미지를 새 탭에서 엽니다'
+                    : '감상 작품 이미지를 봅니다'
                 }
               >
                 🖼️ 작품 보기
-              </a>
+              </button>
             )}
             {pendingCount > 0 && (
               <button
@@ -933,6 +932,68 @@ export default function AssignmentDetail() {
           </>
         )}
       </div>
+
+      {showArtworkModal && assignment.imageUrl && (
+        <div
+          onClick={() => setShowArtworkModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            zIndex: 9998,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2rem',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card, #1e1e2e)',
+              border: '1px solid var(--cyan-primary, #22d3ee)',
+              borderRadius: '1.25rem',
+              padding: '1.5rem',
+              maxWidth: 'min(90vw, 900px)',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={assignment.imageUrl}
+              alt={assignment.paintingTitle || '감상 작품'}
+              style={{
+                maxWidth: '100%',
+                maxHeight: 'calc(90vh - 8rem)',
+                objectFit: 'contain',
+                borderRadius: '0.75rem',
+              }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '1rem',
+                flexWrap: 'wrap',
+              }}
+            >
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                {assignment.paintingTitle
+                  ? `🖼️ ${assignment.paintingTitle}${assignment.artist ? ` · ${assignment.artist}` : ''}${assignment.year ? ` (${assignment.year})` : ''}`
+                  : '감상 작품'}
+              </p>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowArtworkModal(false)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEntryCodeFloat && (
         <div
