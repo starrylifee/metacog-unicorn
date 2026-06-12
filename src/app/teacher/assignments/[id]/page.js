@@ -583,6 +583,21 @@ export default function AssignmentDetail() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {assignment.type === 'art' && assignment.imageUrl && (
+              <a
+                href={assignment.imageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+                title={
+                  assignment.paintingTitle
+                    ? `${assignment.paintingTitle}${assignment.artist ? ` · ${assignment.artist}` : ''}`
+                    : '감상 작품 이미지를 새 탭에서 엽니다'
+                }
+              >
+                🖼️ 작품 보기
+              </a>
+            )}
             {pendingCount > 0 && (
               <button
                 className="btn btn-primary btn-sm"
