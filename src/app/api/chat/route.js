@@ -21,6 +21,56 @@ const openai = new OpenAI({
 
 const MODEL_NAME = 'gpt-4o-mini';
 
+const IMAGE_FETCH_TIMEOUT_MS = 8000;
+const IMAGE_FAILURE_TTL_MS = 60000;
+
+// OpenAI가 외부 CDN에서 이미지를 직접 받다가 "Timeout while downloading"으로
+// 실패하는 것을 막기 위해, 서버에서 직접 받아 base64 data URL로 변환해 넘긴다.
+// 성공은 영구 캐시, 실패는 짧은 TTL로 음수 캐시해 매 턴 재시도를 피한다.
+const imageDataUrlCache = new Map();
+
+async function fetchImageAsDataUrl(rawImageUrl) {
+  const imageUrl = typeof rawImageUrl === 'string' ? rawImageUrl.trim() : '';
+  if (!imageUrl || !imageUrl.startsWith('http')) {
+    return null;
+  }
+
+  const cached = imageDataUrlCache.get(imageUrl);
+  if (cached) {
+    if (cached.dataUrl) {
+      return cached.dataUrl;
+    }
+    if (Date.now() - cached.failedAt < IMAGE_FAILURE_TTL_MS) {
+      return null;
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(imageUrl, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`이미지 응답 상태 ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const base64 = Buffer.from(await response.arrayBuffer()).toString('base64');
+    const dataUrl = `data:${contentType};base64,${base64}`;
+    imageDataUrlCache.set(imageUrl, { dataUrl });
+    return dataUrl;
+  } catch (error) {
+    console.warn('Art image fetch failed; falling back to text-only.', {
+      imageUrl,
+      message: error?.message || 'unknown error',
+    });
+    imageDataUrlCache.set(imageUrl, { dataUrl: null, failedAt: Date.now() });
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function getLowestAllowedScore(scoreOptions) {
   return Array.isArray(scoreOptions) && scoreOptions.length > 0 ? scoreOptions[0] : 0;
 }
@@ -480,13 +530,13 @@ async function createForcedFinalReply(assignment, conversationMessages, artPrimi
 
 async function createStructuredForcedFinalReply(assignment, conversationMessages) {
   const transcript = buildConversationTranscript(conversationMessages);
-  const imageUrl = typeof assignment?.imageUrl === 'string' ? assignment.imageUrl.trim() : '';
-  const hasImage = Boolean(imageUrl) && imageUrl.startsWith('http');
+  const dataUrl = assignment.type === 'art' ? await fetchImageAsDataUrl(assignment?.imageUrl) : null;
+  const hasImage = Boolean(dataUrl);
 
-  const evalUserContent = hasImage && assignment.type === 'art'
+  const evalUserContent = hasImage
     ? [
         { type: 'text', text: '이 작품을 직접 확인하고 아래 대화를 평가해 주세요:' },
-        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'image_url', image_url: { url: dataUrl } },
         { type: 'text', text: `\n아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}` },
       ]
     : `아래 대화는 이미 마지막 학생 답변까지 끝난 상태야. 추가 질문 없이 이 대화 자체만 보고 최종 평가해.\n\n${transcript}`;
@@ -528,15 +578,15 @@ function applyMinimumScore(score, scoreOptions, conversationMessages) {
   return totalStudentBytes > 20 ? scoreOptions[1] : score;
 }
 
-function buildArtImagePrimingMessages(assignment) {
-  const imageUrl = typeof assignment?.imageUrl === 'string' ? assignment.imageUrl.trim() : '';
-  if (!imageUrl || !imageUrl.startsWith('http')) return [];
+async function buildArtImagePrimingMessages(assignment) {
+  const dataUrl = await fetchImageAsDataUrl(assignment?.imageUrl);
+  if (!dataUrl) return [];
   return [
     {
       role: 'user',
       content: [
         { type: 'text', text: '이것이 오늘 학생들이 감상하는 작품입니다. 잘 살펴봐 주세요.' },
-        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'image_url', image_url: { url: dataUrl } },
       ],
     },
     {
@@ -673,7 +723,7 @@ export async function POST(request) {
       { role: 'user', content: userMessage },
     ];
 
-    const artPrimingMessages = isArt ? buildArtImagePrimingMessages(assignment) : [];
+    const artPrimingMessages = isArt ? await buildArtImagePrimingMessages(assignment) : [];
 
     const systemPrompt = isArt
       ? buildArtSystemPrompt(assignment, { shouldForceFinish, allowFinish, maxTurns: effectiveMaxTurns })
